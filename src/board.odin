@@ -87,6 +87,7 @@ test :: proc () {
     fmt.println(y | z)
     fmt.println(~y)
 
+    /*
     a : rand.Rand = rand.create(1123)
 
     //fmt.println(rand.Rand())
@@ -106,4 +107,8 @@ test :: proc () {
         }
         fmt.println("")
     }
+    */
+
+    bb : BitBoard = (1 << 5) | (1 << 3) | (1 << 7) | (1 << 23)
+    fmt.println("num_ones:", count_ones(bb))
 }

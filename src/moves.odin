@@ -84,8 +84,10 @@ gen_all_moves :: proc(position : GamePosition, color : Color) {
     //This is better than the separate procedures because we only have to loop over a single bitboard
     pos_shift : BitBoard
 
+    //TODO: Is there a better way to do this???
+    /*
     if color == Color.White {
-        all_pieces = position.WhiteAllPieces
+        /all_pieces = position.WhiteAllPieces
         pawns = position.WhitePawns
         knights = position.WhiteKnights
         bishops = position.WhiteBishops
@@ -108,13 +110,17 @@ gen_all_moves :: proc(position : GamePosition, color : Color) {
         pos_shift = 1 << u64(i)
         //if (pos_shift &)
 
-        if (pos_shift & pawns) & 
+        if (pos_shift & pawns) {
+            println("DO STUFF HERE")
+        }
+
         if (pos_shift & knights > 0) {
             pos_final = knight_patterns[i] &~ friendly_pieces
             captures = knight_patterns[i] & opp_pieces
         }
 
     }
+    */
 }
 
 bitboard_to_move :: proc(pos_init: u32, pos_final: BitBoard, piece: Piece, moves: queue.Queue) {
