@@ -67,52 +67,58 @@ empty_position :: proc() -> GamePosition {
 }
 
 display_bitboard :: proc(bitboard : BitBoard) {
-    mask : BitBoard = BitBoard(1) << 63
+    shift : uint
+    mask : BitBoard
 
     for i in 0..<8 {
         for j in 0..<8 {
+            shift = uint((7-i)*8 + j)
+            mask = BitBoard(1) << shift
             if (bitboard & mask) > 0 {
                 fmt.print("1")
             } else {
                 fmt.print("0")
             }
-            mask = mask >> 1
         }
         fmt.print("\n")
     }
 }
 
 display_position :: proc(position : GamePosition) {
-    mask : BitBoard = BitBoard(1) << 63
+    shift : uint
+    mask : BitBoard
 
     for i in 0..<8 {
         for j in 0..<8 {
-            //if (mask & position.WhiteKing) > 0 do fmt.print('k')
+            shift = uint((7-i)*8 + j)
+            mask = BitBoard(1) << shift
             switch {
                 case (mask & position.WhiteKing) > 0:
-                    fmt.print('k')
-                case (mask & position.WhiteQueens) > 0:
-                    fmt.print('q')
-                case (mask & position.WhiteRooks) > 0:
-                    fmt.print('r')
-                case (mask & position.WhiteBishops) > 0:
-                    fmt.print('b')
-                case (mask & position.WhiteKnights) > 0:
-                    fmt.print('n')
-                case (mask & position.WhitePawns) > 0:
-                    fmt.print('p')
-                case (mask & position.BlackKing) > 0:
                     fmt.print('K')
-                case (mask & position.BlackQueens) > 0:
+                case (mask & position.WhiteQueens) > 0:
                     fmt.print('Q')
-                case (mask & position.BlackRooks) > 0:
+                case (mask & position.WhiteRooks) > 0:
                     fmt.print('R')
-                case (mask & position.BlackBishops) > 0:
+                case (mask & position.WhiteBishops) > 0:
                     fmt.print('B')
-                case (mask & position.BlackKnights) > 0:
+                case (mask & position.WhiteKnights) > 0:
                     fmt.print('N')
-                case (mask & position.BlackPawns) > 0:
+                case (mask & position.WhitePawns) > 0:
                     fmt.print('P')
+                case (mask & position.BlackKing) > 0:
+                    fmt.print('k')
+                case (mask & position.BlackQueens) > 0:
+                    fmt.print('q')
+                case (mask & position.BlackRooks) > 0:
+                    fmt.print('r')
+                case (mask & position.BlackBishops) > 0:
+                    fmt.print('b')
+                case (mask & position.BlackKnights) > 0:
+                    fmt.print('n')
+                case (mask & position.BlackPawns) > 0:
+                    fmt.print('p')
+                case:
+                    fmt.print('.')
             }
         }
         fmt.print("\n")
