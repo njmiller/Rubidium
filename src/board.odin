@@ -44,6 +44,81 @@ Piece :: struct {
     color : Color,
 }
 
+empty_position :: proc() -> GamePosition {
+    pos : GamePosition
+
+    pos.WhiteKing = 0
+    pos.WhiteQueens = 0
+    pos.WhiteRooks = 0
+    pos.WhiteBishops = 0
+    pos.WhiteKnights = 0
+    pos.WhitePawns = 0
+    pos.WhiteAllPieces = 0
+
+    pos.BlackKing = 0
+    pos.BlackQueens = 0
+    pos.BlackRooks = 0
+    pos.BlackBishops = 0
+    pos.BlackKnights = 0
+    pos.BlackPawns = 0
+    pos.BlackAllPieces = 0
+
+    return pos
+}
+
+display_bitboard :: proc(bitboard : BitBoard) {
+    mask : BitBoard = BitBoard(1) << 63
+
+    for i in 0..<8 {
+        for j in 0..<8 {
+            if (bitboard & mask) > 0 {
+                fmt.print("1")
+            } else {
+                fmt.print("0")
+            }
+            mask = mask >> 1
+        }
+        fmt.print("\n")
+    }
+}
+
+display_position :: proc(position : GamePosition) {
+    mask : BitBoard = BitBoard(1) << 63
+
+    for i in 0..<8 {
+        for j in 0..<8 {
+            //if (mask & position.WhiteKing) > 0 do fmt.print('k')
+            switch {
+                case (mask & position.WhiteKing) > 0:
+                    fmt.print('k')
+                case (mask & position.WhiteQueens) > 0:
+                    fmt.print('q')
+                case (mask & position.WhiteRooks) > 0:
+                    fmt.print('r')
+                case (mask & position.WhiteBishops) > 0:
+                    fmt.print('b')
+                case (mask & position.WhiteKnights) > 0:
+                    fmt.print('n')
+                case (mask & position.WhitePawns) > 0:
+                    fmt.print('p')
+                case (mask & position.BlackKing) > 0:
+                    fmt.print('K')
+                case (mask & position.BlackQueens) > 0:
+                    fmt.print('Q')
+                case (mask & position.BlackRooks) > 0:
+                    fmt.print('R')
+                case (mask & position.BlackBishops) > 0:
+                    fmt.print('B')
+                case (mask & position.BlackKnights) > 0:
+                    fmt.print('N')
+                case (mask & position.BlackPawns) > 0:
+                    fmt.print('P')
+            }
+        }
+        fmt.print("\n")
+    }
+}
+
 get_bitboard :: proc(bitboards : GamePosition, piece: PieceType, color: Color) -> BitBoard {
     switch color {
         case .White: {
@@ -78,14 +153,6 @@ get_bitboard :: proc(bitboards : GamePosition, piece: PieceType, color: Color) -
 test :: proc () {
     x : i32 = 5
     fmt.println(x)
-
-    y : bit_set[0..<64] = {0, 1}
-    z : bit_set[0..<64] = {2, 3, 4}
-
-    fmt.println(y)
-    fmt.println(size_of(y), size_of(u64))
-    fmt.println(y | z)
-    fmt.println(~y)
 
     /*
     a : rand.Rand = rand.create(1123)

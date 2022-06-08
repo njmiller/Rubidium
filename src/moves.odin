@@ -11,7 +11,7 @@ Move :: struct {
     flags : bit_set[0..<4],
 }
 
-knight_patterns : [64]BitBoard
+knight_moves : [64]BitBoard
 
 gen_moves :: proc(position: GamePosition, color: Color) -> queue.Queue {
     moves : queue.Queue
@@ -45,7 +45,7 @@ gen_pawn_moves :: proc(pawns : BitBoard, friendly : BitBoard, enemies: BitBoard,
     return moves
 }
 
-init_knight_patterns :: proc() {
+init_knight_moves :: proc() {
     pi : BitBoard
     pos_moves : BitBoard
 
@@ -62,7 +62,7 @@ init_knight_patterns :: proc() {
         if (pi & left_two != 0) { pos_moves = pos_moves & left_side }
         if (pi & right_two != 0) { pos_moves = pos_moves & right_side }
 
-        knight_patterns[i] = pos_moves
+        knight_moves[i] = pos_moves
     }
 }
 
