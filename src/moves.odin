@@ -51,11 +51,11 @@ init_knight_moves :: proc() {
 
     left_side : BitBoard = 1085102592571150095
     right_side : BitBoard = 17361641481138401520
-    left_two : BitBoard = 1
-    right_two : BitBoard = 1
-
+    left_two : BitBoard = 217020518514230019
+    right_two : BitBoard = 13889313184910721216
+    
     for i in 0..<64 {
-        pi = 1 << u64(i)
+        pi = BitBoard(1) << uint(i)
         pos_moves = (pi << 6) | (pi << 10) | (pi << 15) | (pi << 17)
         pos_moves = pos_moves | (pi >> 6) | (pi >> 10) | (pi >> 15) | (pi >> 17)
 

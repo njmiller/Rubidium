@@ -14,13 +14,9 @@ process_fen :: proc(fen : string) -> GamePosition {
     idx = 0
     col = 1
     row = 8
-    fmt.println("FEN:", fen)
     for {
         shift = 8*(row-1) + (col-1)
         bb_tmp = BitBoard(1) << shift
-        fmt.printf("TEST: %i, %c, %i, %i\n", idx, fen[idx], row, col)
-
-        //fmt.println("TEST2:", fen[idx] == 'r')
 
         switch fen[idx] {
             case 'r' : 
@@ -72,12 +68,13 @@ main :: proc() {
     fen : string
     test : int
     fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-    pos = process_fen(fen)
+    //pos = process_fen(fen)
     //generate_magics()
     //test = strconv.atoi("1")
-    display_bitboard(pos.WhiteQueens)
-    fmt.println("")
-    display_bitboard(pos.BlackQueens)
-    fmt.println("")
-    display_position(pos)
+    //display_bitboard(pos.WhiteQueens)
+    //fmt.println("")
+    //display_bitboard(pos.BlackQueens)
+    //fmt.println("")
+    //display_position(pos)
+    init_knight_moves()
 }
