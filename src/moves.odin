@@ -12,6 +12,7 @@ Move :: struct {
 }
 
 knight_moves : [64]BitBoard
+king_moves : [64]BitBoard
 
 gen_moves :: proc(position: GamePosition, color: Color) -> queue.Queue {
     moves : queue.Queue
@@ -64,6 +65,47 @@ init_knight_moves :: proc() {
 
         knight_moves[i] = pos_moves
     }
+}
+
+init_king_moves :: proc() {
+    pi : BitBoard
+    pos_moves : BitBoard
+    
+    left_side : BitBoard = 1085102592571150095
+    right_side : BitBoard = 17361641481138401520
+    left_one : BitBoard = 72340172838076673
+    right_one : BitBoard = 9259542123273814144
+
+    for i in 0..<64 {
+        pi = BitBoard(1) << uint(i)
+
+        pos_moves = (pi << 1) | (pi << 7) | (pi << 8) | (pi << 9)
+        pos_moves = pos_moves | (pi >> 1) | (pi >> 7) | (pi >> 8) | (pi >> 9)
+
+        if (pi & left_one != 0) { pos_moves = pos_moves & left_side }
+        if (pi & right_one != 0) { pos_moves = pos_moves & right_side }
+
+        king_moves[i] = pos_moves
+    }
+}
+
+init_slider_move :: proc(sq : uint, occupied : BitBoard, is_rook : bool) {
+    delta_rook := matrix[2,2]int{
+        0, 1,
+        1, 0,
+    }
+    delta_bishop := matrix[2,2]int{
+        1, 1,
+        1, -1,
+    }
+
+    delta : matrix[2,2]int
+    if is_rook {
+        delta = delta_rook
+    } else {
+        delta = delta_bishop
+    }
+
 }
 
 gen_rook_moves :: proc(rooks : BitBoard, friendly : BitBoard, enemies : BitBoard, moves: queue.Queue) {

@@ -35,7 +35,7 @@ process_fen :: proc(fen : string) -> GamePosition {
             case 'B' : pos_out.WhiteBishops = pos_out.WhiteBishops | bb_tmp
             case 'Q' : pos_out.WhiteQueens = pos_out.WhiteQueens | bb_tmp
             case 'K' : pos_out.WhiteKing = pos_out.WhiteKing | bb_tmp
-            case '1'..'8' : col += uint(fen[idx] - 48) - 1
+            case '1'..='8' : col += uint(fen[idx] - 48) - 1
             case '/' :
                 idx += 1
                 continue
@@ -65,16 +65,8 @@ process_fen :: proc(fen : string) -> GamePosition {
 
 main :: proc() {
     pos : GamePosition
-    fen : string
-    test : int
-    fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    fen : string = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
     //pos = process_fen(fen)
     //generate_magics()
-    //test = strconv.atoi("1")
-    //display_bitboard(pos.WhiteQueens)
-    //fmt.println("")
-    //display_bitboard(pos.BlackQueens)
-    //fmt.println("")
-    //display_position(pos)
     init_knight_moves()
 }
