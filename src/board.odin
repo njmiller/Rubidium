@@ -66,6 +66,19 @@ empty_position :: proc() -> GamePosition {
     return pos
 }
 
+sq_to_rank_file :: proc(sq: int) -> (int, int) {
+    return (sq-1) / 8 + 1, (sq-1) % 8 + 1
+}
+
+rank_file_to_bb :: proc(rank : int, file : int) -> BitBoard {
+    sq : int = rank_file_to_sq(rank, file)
+    return BitBoard(1) << uint(sq-1)
+}
+
+rank_file_to_sq :: proc(rank : int, file : int) -> int {
+    return (rank-1)*8 + file
+}
+
 display_bitboard :: proc(bitboard : BitBoard) {
     shift : uint
     mask : BitBoard

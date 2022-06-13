@@ -1,6 +1,7 @@
 package main
 
 import "core:container/queue"
+import "core:fmt"
 
 Move :: struct {
     pos_init : u32,
@@ -89,7 +90,13 @@ init_king_moves :: proc() {
     }
 }
 
-init_slider_move :: proc(sq : uint, occupied : BitBoard, is_rook : bool) {
+//Use computation to determine slider moves
+init_slider_move :: proc(sq : int, occupied : BitBoard, is_rook : bool) -> BitBoard {
+    rank, file, rank_i, file_i : int
+    i : int
+    output : BitBoard = 0
+    bb_tmp : BitBoard
+
     delta_rook := matrix[2,2]int{
         0, 1,
         1, 0,
@@ -106,6 +113,34 @@ init_slider_move :: proc(sq : uint, occupied : BitBoard, is_rook : bool) {
         delta = delta_bishop
     }
 
+    rank_i, file_i = sq_to_rank_file(sq)
+
+    //Maybe a second loop to get rid of copied code
+    for i in 0..=1 {
+        rank = rank_i
+        file = file_i
+        for {
+            rank += delta[i, 0]
+            file += delta[i, 1]
+            if (rank > 8) || (rank < 1) || (file > 8) || (file < 1) do break
+            bb_tmp = rank_file_to_bb(rank, file)
+            output |= bb_tmp
+            if (bb_tmp & occupied) != 0 do break
+        }
+    
+        rank = rank_i
+        file = file_i
+        for {
+            rank -= delta[i, 0]
+            file -= delta[i, 1]
+            if (rank > 8) || (rank < 1) || (file > 8) || (file < 1) do break
+            bb_tmp = rank_file_to_bb(rank, file)
+            output |= bb_tmp
+            if (bb_tmp & occupied) != 0 do break
+        }
+    }
+    
+    return output
 }
 
 gen_rook_moves :: proc(rooks : BitBoard, friendly : BitBoard, enemies : BitBoard, moves: queue.Queue) {

@@ -66,7 +66,15 @@ process_fen :: proc(fen : string) -> GamePosition {
 main :: proc() {
     pos : GamePosition
     fen : string = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    bb_tmp : BitBoard = BitBoard(1) << 22
+    bb_out : BitBoard
     //pos = process_fen(fen)
     //generate_magics()
     init_knight_moves()
+
+    bb_out = init_slider_move(23, bb_tmp, false)
+    display_bitboard(bb_out)
+    fmt.println("")
+    bb_out = init_slider_move(23, bb_tmp, true)
+    display_bitboard(bb_out)
 }
