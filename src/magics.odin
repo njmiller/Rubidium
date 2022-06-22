@@ -2,11 +2,14 @@ package main
 
 import "core:fmt"
 import "core:math/rand"
+import "core:container/queue"
 
 bishop_attacks : [2048]BitBoard
 rook_attacks : [2048]BitBoard
-attack_table : []BitBoard
+//attack_table : []BitBoard
 
+//Shifts are equal to the number of bits needed to describe
+//all the possible permutations for the occupancy. 
 magic_rook_shifts := [64]int{
     12, 11, 11, 11, 11, 11, 11, 12,
     11, 10, 10, 10, 10, 10, 10, 11,
@@ -72,7 +75,7 @@ magic_table :: struct {
     mask : BitBoard,
     shift : uint,
     magic : BitBoard,
-    attacks : BitBoard,
+    attacks : map[u64]BitBoard,
 }
 
 magic_bishop_table : [64]magic_table
@@ -94,6 +97,77 @@ get_rook_moves :: proc(sq : uint, occupancy : BitBoard) -> BitBoard {
     hash >>= uint(64 - magic_rook_table[sq].shift)
 
     return rook_attacks[hash]
+}
+
+//Populate the global magic bitboard tables
+init_magic_bitboards :: proc() {
+    i : int
+    for i in 0..<64 {
+        init_bishop_magic(i)
+        init_rook_magic(i)
+    }
+}
+
+//Should be same as rmask and bmask (though input differs by 1, i.e. this code starts at sq=1, while
+//rmask and bmask start at 0)
+get_bishop_mask :: proc(sq: int) -> BitBoard {
+    rank, file : int = sq_to_rank_file(sq)
+    RANKS : [8]BitBoard = {RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8}
+    FILES : [8]BitBoard = {FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H}
+    edge_mask : BitBoard = ((RANK_1 | RANK_8) & ~RANKS[rank-1]) | ((FILE_A | FILE_H) & ~FILES[file-1])
+    return init_slider_move(sq, BitBoard(0), false) & ~edge_mask
+}
+
+get_rook_mask :: proc(sq: int) -> BitBoard {
+    rank, file : int = sq_to_rank_file(sq)
+    RANKS : [8]BitBoard = {RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8}
+    FILES : [8]BitBoard = {FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H}
+    edge_mask : BitBoard = ((RANK_1 | RANK_8) & ~RANKS[rank-1]) | ((FILE_A | FILE_H) & ~FILES[file-1])
+    return init_slider_move(sq, BitBoard(0), true) & ~edge_mask
+}
+
+init_bishop_magic :: proc(sq : int) {
+    shift : int = magic_bishop_shifts[sq]
+    magic : BitBoard = magic_bishop_numbers[sq]
+    mask : BitBoard = get_bishop_mask(sq)
+    count : int = 1 << uint(shift)
+    attacks : queue.Queue(BitBoard)
+    permutations : queue.Queue(BitBoard)
+    occ : BitBoard
+    permutation, attack : BitBoard
+    
+
+    //table_tmp : magic_table = magic_bishop_table[i]
+    //table_tmp.shift = shift
+    //table_tmp.mask = mask
+    //table_tmp.magic = magic
+
+    for i in 0..<count {
+        //permutation = get_permutation(mask, i)
+        permutation = index_to_bb(i, shift, mask)
+        attack = init_slider_move(sq, permutation, false)
+        permuations.push_back(permutation)
+        attacks.push_back(attack)
+    }
+}
+
+//Get the permutation associated with the input index
+//This is same as index_to_bb
+get_permutation :: proc(mask : BitBoard, index : BitBoard) -> BitBoard {
+
+    mask_tmp : BitBoard = mask
+    index_tmp : BitBoard = index
+    output : BitBoard = 0
+
+    for mask_tmp != 0 {
+        mask_tmp &= mask_tmp - 1
+    }
+
+    return output
+}
+
+init_rook_magic :: proc(i : int) {
+    shift : int = magic_rook_shifts[i]
 }
 
 //Code to generate magic numbers

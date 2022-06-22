@@ -6,6 +6,26 @@ import "core:math/rand"
 BitBoard :: distinct u64
 //BitBoard :: distinct bit_set[0..<64]
 
+RANK_1 : BitBoard : 0x00000000000000FF
+RANK_2 : BitBoard : 0x000000000000FF00
+RANK_3 : BitBoard : 0x0000000000FF0000
+RANK_4 : BitBoard : 0x00000000FF000000
+RANK_5 : BitBoard : 0x000000FF00000000
+RANK_6 : BitBoard : 0x0000FF0000000000
+RANK_7 : BitBoard : 0x00FF000000000000
+RANK_8 : BitBoard : 0xFF00000000000000
+
+FILE_A : BitBoard : 0x0101010101010101
+FILE_B : BitBoard : 0x0202020202020202
+FILE_C : BitBoard : 0x0404040404040404
+FILE_D : BitBoard : 0x0808080808080808
+FILE_E : BitBoard : 0x1010101010101010
+FILE_F : BitBoard : 0x2020202020202020
+FILE_G : BitBoard : 0x4040404040404040
+FILE_H : BitBoard : 0x8080808080808080
+
+EDGE : BitBoard : RANK_1 | RANK_8 | FILE_A | FILE_H
+
 GamePosition :: struct {
     WhitePawns : BitBoard,
     WhiteRooks : BitBoard,
@@ -83,6 +103,7 @@ display_bitboard :: proc(bitboard : BitBoard) {
     shift : uint
     mask : BitBoard
 
+    fmt.println("")
     for i in 0..<8 {
         for j in 0..<8 {
             shift = uint((7-i)*8 + j)
