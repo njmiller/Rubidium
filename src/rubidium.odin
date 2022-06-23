@@ -67,14 +67,52 @@ main :: proc() {
     pos : GamePosition
     fen : string = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
     bb_tmp : BitBoard = BitBoard(1) << 22
-    bb_out : BitBoard
+    bb_out, occ : BitBoard
+    mask : BitBoard
     //pos = process_fen(fen)
     //generate_magics()
     init_knight_moves()
+    init_magic_bitboards()
 
-    bb_out = init_slider_move(23, bb_tmp, false)
+
+    
+    occ = BitBoard(1) << 16
+    occ |= BitBoard(1) << 17
+    occ |= BitBoard(1) << 18
+    occ |= BitBoard(1) << 10
+    occ |= BitBoard(1) << 2
+
+    occ |= BitBoard(1) << 0
+
+    fmt.println("Occupancy")
+    display_bitboard(occ)
+
+    bb_tmp = get_rook_moves(0, occ)
+    fmt.println("Rook")
+    display_bitboard(bb_tmp)
+
+    bb_tmp = get_bishop_moves(0, occ)
+    fmt.println("Bishop")
+    display_bitboard(bb_tmp)
+    
+    /*
+    bb_out = init_slider_move(1, occ, false)
     display_bitboard(bb_out)
     fmt.println("")
-    bb_out = init_slider_move(23, bb_tmp, true)
+    bb_out = init_slider_move(1, occ, true)
     display_bitboard(bb_out)
+    */
+
+    /*
+    mask = rmask(0)
+    display_bitboard(mask)
+    mask = get_rook_mask(0)
+    display_bitboard(mask)
+
+    for i in 0..<100 {
+        bb_tmp = index_to_bb(i, 12, mask)
+        fmt.println("I = ", i)
+        display_bitboard(bb_tmp)
+    }
+    */
 }

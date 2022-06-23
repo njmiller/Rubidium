@@ -97,6 +97,9 @@ init_slider_move :: proc(sq : int, occupied : BitBoard, is_rook : bool) -> BitBo
     output : BitBoard = 0
     bb_tmp : BitBoard
 
+    rf_max :: 7
+    rf_min :: 0
+
     delta_rook := matrix[2,2]int{
         0, 1,
         1, 0,
@@ -122,7 +125,7 @@ init_slider_move :: proc(sq : int, occupied : BitBoard, is_rook : bool) -> BitBo
         for {
             rank += delta[i, 0]
             file += delta[i, 1]
-            if (rank > 8) || (rank < 1) || (file > 8) || (file < 1) do break
+            if (rank > rf_max) || (rank < rf_min) || (file > rf_max) || (file < rf_min) do break
             bb_tmp = rank_file_to_bb(rank, file)
             output |= bb_tmp
             if (bb_tmp & occupied) != 0 do break
@@ -133,7 +136,7 @@ init_slider_move :: proc(sq : int, occupied : BitBoard, is_rook : bool) -> BitBo
         for {
             rank -= delta[i, 0]
             file -= delta[i, 1]
-            if (rank > 8) || (rank < 1) || (file > 8) || (file < 1) do break
+            if (rank > rf_max) || (rank < rf_min) || (file > rf_max) || (file < rf_min) do break
             bb_tmp = rank_file_to_bb(rank, file)
             output |= bb_tmp
             if (bb_tmp & occupied) != 0 do break

@@ -86,24 +86,26 @@ empty_position :: proc() -> GamePosition {
     return pos
 }
 
+//sq runs from 0 to 63 and rank, file go from 0 to 7
 sq_to_rank_file :: proc(sq: int) -> (int, int) {
-    return (sq-1) / 8 + 1, (sq-1) % 8 + 1
+    //return (sq-1) / 8 + 1, (sq-1) % 8 + 1
+    return (sq / 8), (sq % 8)
 }
 
 rank_file_to_bb :: proc(rank : int, file : int) -> BitBoard {
     sq : int = rank_file_to_sq(rank, file)
-    return BitBoard(1) << uint(sq-1)
+    return BitBoard(1) << uint(sq)
 }
 
 rank_file_to_sq :: proc(rank : int, file : int) -> int {
-    return (rank-1)*8 + file
+    //return (rank-1)*8 + file
+    return 8*rank + file
 }
 
 display_bitboard :: proc(bitboard : BitBoard) {
     shift : uint
     mask : BitBoard
 
-    fmt.println("")
     for i in 0..<8 {
         for j in 0..<8 {
             shift = uint((7-i)*8 + j)
@@ -116,6 +118,7 @@ display_bitboard :: proc(bitboard : BitBoard) {
         }
         fmt.print("\n")
     }
+    fmt.print("\n")
 }
 
 display_position :: proc(position : GamePosition) {
