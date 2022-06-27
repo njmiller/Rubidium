@@ -15,46 +15,19 @@ Move :: struct {
 knight_moves : [64]BitBoard
 king_moves : [64]BitBoard
 
-gen_moves :: proc(position: GamePosition, color: Color) -> queue.Queue {
-    moves : queue.Queue
-
-    return moves
-}
-
-gen_pawn_moves :: proc(pawns : BitBoard, friendly : BitBoard, enemies: BitBoard,
-                       color: Color, moves: queue.Queue) {
-    pi : u64
-    pm : i64
-    flags : bit_set[0..<4]
-
-    if color == Color.White { pm=1 } else {pm=-1}
-    for i in 0..<64 {
-        if (1 << i) & pawns { 
-            //4 possible moves
-            pi = (1 << (i+pm*8))
-            if (pi & friendly == 0) & (pi & enemies == 0) {
-                move = Move{i, i+pm*8, piece.Pawn, flags}
-                moves.push_back(move)
-            }
-            pi = (1 << (i+pm*7))
-            if (pi & enemies > 0) {
-                flags = {1}
-                move = Move{i, i+pm*8, piece.Pawn, flags}
-                moves.push_back(move)
-            }
-        }
-    }
-    return moves
-}
-
 init_knight_moves :: proc() {
     pi : BitBoard
     pos_moves : BitBoard
 
-    left_side : BitBoard = 1085102592571150095
-    right_side : BitBoard = 17361641481138401520
-    left_two : BitBoard = 217020518514230019
-    right_two : BitBoard = 13889313184910721216
+    //left_side : BitBoard = 1085102592571150095
+    //right_side : BitBoard = 17361641481138401520
+    //left_two : BitBoard = 217020518514230019
+    //right_two : BitBoard = 13889313184910721216
+
+    left_side : BitBoard : FILE_A | FILE_B | FILE_C | FILE_D 
+    right_side : BitBoard : FILE_E | FILE_F | FILE_G | FILE_H
+    left_two : BitBoard : FILE_A | FILE_B
+    right_two : BitBoard : FILE_G | FILE_H
     
     for i in 0..<64 {
         pi = BitBoard(1) << uint(i)
@@ -72,10 +45,13 @@ init_king_moves :: proc() {
     pi : BitBoard
     pos_moves : BitBoard
     
-    left_side : BitBoard = 1085102592571150095
-    right_side : BitBoard = 17361641481138401520
-    left_one : BitBoard = 72340172838076673
-    right_one : BitBoard = 9259542123273814144
+    //left_side : BitBoard = 1085102592571150095
+    //right_side : BitBoard = 17361641481138401520
+    //left_one : BitBoard = 72340172838076673
+    //right_one : BitBoard = 9259542123273814144
+
+    left_side : BitBoard : FILE_A | FILE_B | FILE_C | FILE_D 
+    right_side : BitBoard : FILE_E | FILE_F | FILE_G | FILE_H
 
     for i in 0..<64 {
         pi = BitBoard(1) << uint(i)
@@ -83,8 +59,8 @@ init_king_moves :: proc() {
         pos_moves = (pi << 1) | (pi << 7) | (pi << 8) | (pi << 9)
         pos_moves = pos_moves | (pi >> 1) | (pi >> 7) | (pi >> 8) | (pi >> 9)
 
-        if (pi & left_one != 0) { pos_moves = pos_moves & left_side }
-        if (pi & right_one != 0) { pos_moves = pos_moves & right_side }
+        if (pi & FILE_A != 0) { pos_moves = pos_moves & left_side }
+        if (pi & FILE_H != 0) { pos_moves = pos_moves & right_side }
 
         king_moves[i] = pos_moves
     }
@@ -146,23 +122,50 @@ init_slider_move :: proc(sq : int, occupied : BitBoard, is_rook : bool) -> BitBo
     return output
 }
 
-gen_rook_moves :: proc(rooks : BitBoard, friendly : BitBoard, enemies : BitBoard, moves: queue.Queue) {
-    move: Move
-    occupancy : BitBoard = friendly & enemies
+//Magic table stuff is initialized in magics.odin
+get_bishop_moves :: proc(sq : int, occupancy : BitBoard) -> BitBoard {
+    hash : u64
+    hash = u64(occupancy & magic_bishop_table[sq].mask)
+    hash *= magic_bishop_table[sq].magic
+    hash >>= uint(64 - magic_bishop_table[sq].shift)
+    return magic_bishop_table[sq].attacks[hash]
 }
 
-gen_bishop_moves :: proc(bishops : BitBoard, friendly : BitBoard, enemies : BitBoard, moves: queue.Queue) {
-
+get_rook_moves :: proc(sq : int, occupancy : BitBoard) -> BitBoard {
+    hash : u64
+    hash = u64(occupancy & magic_rook_table[sq].mask)
+    hash *= magic_rook_table[sq].magic
+    hash >>= uint(64 - magic_rook_table[sq].shift)
+    return magic_rook_table[sq].attacks[hash]
 }
 
-gen_queen_moves :: proc(queens : BitBoard, friendly, BitBoard, enemies : BitBoard, moves: queue.Queue) {
-    gen_rook_moves(queens, friendly, enemies, moves)
-    gen_bishop_moves(queens, friendly, enemies, moves)
+get_queen_moves :: proc(sq : int, occupancy : BitBoard) -> BitBoard {
+    return get_bishop_moves(sq, occupancy) | get_rook_moves(sq, occupancy)
 }
 
-gen_all_moves :: proc(position : GamePosition, color : Color) {
+gen_moves :: proc(position : GamePosition, color : Color) {
     //This is better than the separate procedures because we only have to loop over a single bitboard
-    pos_shift : BitBoard
+    i : int
+    moves : queue.Queue(Move)
+
+    /*
+    if color == .White {
+        my_bb = position.WhiteAllPieces
+        opp_bb = position.BlackAllPieces
+    } else if color == .Black {
+        my_bb = position.BlackAllPieces
+        opp_bb = position.WhiteAllPieces
+    }
+
+    for i in 0..<64 {
+        pos_bb = BitBoard(1) << uint(i)
+        switch {
+            case (pos_bb & WhitePawns) && color == .White:
+                fmt.println("TEST")
+        }
+    }
+    */
+
 
     //TODO: Is there a better way to do this???
     /*
@@ -212,7 +215,7 @@ bitboard_to_move :: proc(pos_init: u32, pos_final: BitBoard, piece: Piece, moves
         pos_shift = pos_shift >> 1
         if (pos_shift & 0x01) == 1 {
             move = Move{pos_init, i, piece, bit_set[0..<4]}
-            moves.push_back(move)
+            //moves.push_back(move)
         }
     }
 

@@ -42,6 +42,28 @@ GamePosition :: struct {
     BlackQueens : BitBoard,
     BlackKing : BitBoard,
     BlackAllPieces : BitBoard,
+
+    Castling : u8,
+    EnPassant : uint,
+}
+
+//Maybe this would make the move generation code simpler
+PositionOneColor :: struct {
+    Pawns : BitBoard,
+    Rooks : BitBoard,
+    Bishops : BitBoard,
+    Knights : BitBoard,
+    Queens : BitBoard,
+    King : BitBoard,
+    AllPieces : BitBoard,
+}
+
+GamePosition2 :: struct {
+    White : PositionOneColor,
+    Black : PositionOneColor,
+
+    Castling : u8,
+    EnPassant : uint,
 }
 
 Color :: enum {

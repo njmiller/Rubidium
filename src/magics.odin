@@ -4,10 +4,6 @@ import "core:fmt"
 import "core:math/rand"
 import "core:container/queue"
 
-bishop_attacks : [2048]BitBoard
-rook_attacks : [2048]BitBoard
-//attack_table : []BitBoard
-
 //Shifts are equal to the number of bits needed to describe
 //all the possible permutations for the occupancy. 
 magic_rook_shifts := [64]int{
@@ -80,24 +76,6 @@ magic_table :: struct {
 
 magic_bishop_table : [64]magic_table
 magic_rook_table : [64]magic_table
-
-get_bishop_moves :: proc(sq : uint, occupancy : BitBoard) -> BitBoard {
-    hash : u64
-    hash = u64(occupancy & magic_bishop_table[sq].mask)
-    hash *= magic_bishop_table[sq].magic
-    hash >>= uint(64 - magic_bishop_table[sq].shift)
-
-    return magic_bishop_table[sq].attacks[hash]
-}
-
-get_rook_moves :: proc(sq : uint, occupancy : BitBoard) -> BitBoard {
-    hash : u64
-    hash = u64(occupancy & magic_rook_table[sq].mask)
-    hash *= magic_rook_table[sq].magic
-    hash >>= uint(64 - magic_rook_table[sq].shift)
-
-    return magic_rook_table[sq].attacks[hash]
-}
 
 //Populate the global magic bitboard tables
 init_magic_bitboards :: proc() {
@@ -221,9 +199,23 @@ random_u64_fewbits :: proc() -> BitBoard {
     return BitBoard(rand.uint64(&a) & rand.uint64(&a) & rand.uint64(&a))
 }
 
+random_u64_fewbits2 :: proc() -> u64 {
+    return rand.uint64(&a) & rand.uint64(&a) & rand.uint64(&a)
+}
+
 count_ones :: proc(b : BitBoard) -> int {
     r : int = 0
     bp : BitBoard = b
+    for (bp > 0) {
+        r = r + 1
+        bp = bp & (bp-1)
+    }
+    return r
+}
+
+count_ones2 :: proc(b : u64) -> int {
+    r : int = 0
+    bp : u64 = b
     for (bp > 0) {
         r = r + 1
         bp = bp & (bp-1)
@@ -328,8 +320,13 @@ batt :: proc(sq : int, block : BitBoard) -> BitBoard {
     return result
 }
 
+//This just calculates the hash
 transform :: proc(b : BitBoard, magic : BitBoard, bits : int) -> int {
     return int((b*magic) >> u64(64 - bits))
+}
+
+transform2 :: proc(b : BitBoard, magic : u64, bits : int) -> int {
+    return int((u64(b)*magic) >> u64(64 - bits))
 }
 
 find_magic :: proc(sq : int, m : int, bishop : bool) -> BitBoard {
@@ -353,6 +350,45 @@ find_magic :: proc(sq : int, m : int, bishop : bool) -> BitBoard {
             j = transform(b[i], magic, m)
             if(used[j] == 0) do used[j] = a[i]
             else if(used[j] != a[i]) do fail = true
+        }
+        if !fail do return magic
+    }
+    fmt.println("***Failed***")
+    return 0
+}
+
+find_magic2 :: proc(sq : int, m : int, bishop : bool) -> u64 {
+    mask : BitBoard
+    magic : u64
+    b, a, used : [4096]BitBoard
+    nperm : int
+    j, n, i : int
+    fail : bool
+
+    mask = bishop ? get_bishop_mask(sq) : get_rook_mask(sq)
+    n = bishop ? magic_bishop_shifts[sq] : magic_rook_shifts[sq]
+    nperm = int(1 << uint(n))
+    
+
+    //Loop over all permutations for this square and calculate the moves for each
+    //permutation
+    for i in 0..<nperm {
+        b[i] = index_to_bb(i, n, mask)
+        a[i] = bishop ? get_bishop_moves(sq, b[i]) : get_rook_moves(sq, b[i])
+    }
+
+    //Randomly determine a magic number and check to see if it is valid
+    //(i.e. if permutations with different sets of valid moves have the same hash)
+    //If it is not valid, try again. We keep trying until we find a valid magic number
+    for k in 0..<100000000 {
+        magic = random_u64_fewbits2()
+        if (count_ones2((u64(mask) * magic) & 0xFF00000000000000) < 6) do continue
+        for i in 0..<4096 do used[i] = 0
+        for i, fail = 0, false; !fail && i < nperm; i=i+1 {
+            j = transform2(b[i], magic, m)
+            //j = (uint64(b[i])*magic) >> u64(64 - m))
+            if (used[j] == 0) do used[j] = a[i]
+            else if (used[j] != a[i]) do fail = true
         }
         if !fail do return magic
     }

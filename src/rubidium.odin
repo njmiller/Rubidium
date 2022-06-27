@@ -72,10 +72,9 @@ main :: proc() {
     //pos = process_fen(fen)
     //generate_magics()
     init_knight_moves()
+    init_king_moves()
     init_magic_bitboards()
 
-
-    
     occ = BitBoard(1) << 16
     occ |= BitBoard(1) << 17
     occ |= BitBoard(1) << 18
@@ -94,7 +93,7 @@ main :: proc() {
     bb_tmp = get_bishop_moves(0, occ)
     fmt.println("Bishop")
     display_bitboard(bb_tmp)
-    
+
     /*
     bb_out = init_slider_move(1, occ, false)
     display_bitboard(bb_out)
@@ -103,16 +102,29 @@ main :: proc() {
     display_bitboard(bb_out)
     */
 
-    /*
+    
     mask = rmask(0)
     display_bitboard(mask)
     mask = get_rook_mask(0)
     display_bitboard(mask)
 
+    sq : int = 27
+
+    mask = rmask(sq)
+    display_bitboard(mask)
+    mask = get_rook_mask(sq)
+    display_bitboard(mask)
+
+    n : int = magic_rook_shifts[sq]
+    bb_tmp = index_to_bb(sq, n, mask)
+    //tmp = batt(27)
+    /*
     for i in 0..<100 {
         bb_tmp = index_to_bb(i, 12, mask)
         fmt.println("I = ", i)
         display_bitboard(bb_tmp)
     }
     */
+
+    generate_magics()
 }
