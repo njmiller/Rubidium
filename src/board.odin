@@ -26,6 +26,7 @@ FILE_H : BitBoard : 0x8080808080808080
 
 EDGE : BitBoard : RANK_1 | RANK_8 | FILE_A | FILE_H
 
+/*
 GamePosition :: struct {
     WhitePawns : BitBoard,
     WhiteRooks : BitBoard,
@@ -46,6 +47,7 @@ GamePosition :: struct {
     Castling : u8,
     EnPassant : uint,
 }
+*/
 
 //Maybe this would make the move generation code simpler
 PositionOneColor :: struct {
@@ -58,12 +60,13 @@ PositionOneColor :: struct {
     AllPieces : BitBoard,
 }
 
-GamePosition2 :: struct {
+GamePosition :: struct {
     White : PositionOneColor,
     Black : PositionOneColor,
 
     Castling : u8,
     EnPassant : uint,
+    turn : Color,
 }
 
 Color :: enum {
@@ -86,6 +89,7 @@ Piece :: struct {
     color : Color,
 }
 
+/*
 empty_position :: proc() -> GamePosition {
     pos : GamePosition
 
@@ -104,6 +108,33 @@ empty_position :: proc() -> GamePosition {
     pos.BlackKnights = 0
     pos.BlackPawns = 0
     pos.BlackAllPieces = 0
+
+    return pos
+}
+*/
+
+empty_position_onecolor :: proc() -> PositionOneColor {
+    pos : PositionOneColor
+
+    pos.King = 0
+    pos.Queens = 0
+    pos.Rooks = 0
+    pos.Knights = 0
+    pos.Bishops = 0
+    pos.Pawns = 0
+    pos.AllPieces = 0
+
+    return pos
+}
+
+empty_position :: proc() -> GamePosition {
+    pos : GamePosition
+
+    pos.White = empty_position_onecolor()
+    pos.Black = empty_position_onecolor()
+
+    pos.Castling = 0
+    pos.EnPassant = 0
 
     return pos
 }
@@ -152,29 +183,29 @@ display_position :: proc(position : GamePosition) {
             shift = uint((7-i)*8 + j)
             mask = BitBoard(1) << shift
             switch {
-                case (mask & position.WhiteKing) > 0:
+                case (mask & position.White.King) > 0:
                     fmt.print('K')
-                case (mask & position.WhiteQueens) > 0:
+                case (mask & position.White.Queens) > 0:
                     fmt.print('Q')
-                case (mask & position.WhiteRooks) > 0:
+                case (mask & position.White.Rooks) > 0:
                     fmt.print('R')
-                case (mask & position.WhiteBishops) > 0:
+                case (mask & position.White.Bishops) > 0:
                     fmt.print('B')
-                case (mask & position.WhiteKnights) > 0:
+                case (mask & position.White.Knights) > 0:
                     fmt.print('N')
-                case (mask & position.WhitePawns) > 0:
+                case (mask & position.White.Pawns) > 0:
                     fmt.print('P')
-                case (mask & position.BlackKing) > 0:
+                case (mask & position.Black.King) > 0:
                     fmt.print('k')
-                case (mask & position.BlackQueens) > 0:
+                case (mask & position.Black.Queens) > 0:
                     fmt.print('q')
-                case (mask & position.BlackRooks) > 0:
+                case (mask & position.Black.Rooks) > 0:
                     fmt.print('r')
-                case (mask & position.BlackBishops) > 0:
+                case (mask & position.Black.Bishops) > 0:
                     fmt.print('b')
-                case (mask & position.BlackKnights) > 0:
+                case (mask & position.Black.Knights) > 0:
                     fmt.print('n')
-                case (mask & position.BlackPawns) > 0:
+                case (mask & position.Black.Pawns) > 0:
                     fmt.print('p')
                 case:
                     fmt.print('.')
@@ -188,30 +219,30 @@ get_bitboard :: proc(bitboards : GamePosition, piece: PieceType, color: Color) -
     switch color {
         case .White: {
             switch piece {
-                case .Pawn: return bitboards.WhitePawns
-                case .Knight: return bitboards.WhiteKnights
-                case .Bishop: return bitboards.WhiteBishops
-                case .Rook: return bitboards.WhiteRooks
-                case .Queen: return bitboards.WhiteQueens
-                case .King: return bitboards.WhiteKing
-                case .All: return bitboards.WhiteAllPieces
+                case .Pawn: return bitboards.White.Pawns
+                case .Knight: return bitboards.White.Knights
+                case .Bishop: return bitboards.White.Bishops
+                case .Rook: return bitboards.White.Rooks
+                case .Queen: return bitboards.White.Queens
+                case .King: return bitboards.White.King
+                case .All: return bitboards.White.AllPieces
             }
         }
         case .Black: {
             switch piece {
-                case .Pawn: return bitboards.BlackPawns
-                case .Knight: return bitboards.BlackKnights
-                case .Bishop: return bitboards.BlackBishops
-                case .Rook: return bitboards.BlackRooks
-                case .Queen: return bitboards.BlackQueens
-                case .King: return bitboards.BlackKing
-                case .All: return bitboards.BlackAllPieces
+                case .Pawn: return bitboards.Black.Pawns
+                case .Knight: return bitboards.Black.Knights
+                case .Bishop: return bitboards.Black.Bishops
+                case .Rook: return bitboards.Black.Rooks
+                case .Queen: return bitboards.Black.Queens
+                case .King: return bitboards.Black.King
+                case .All: return bitboards.Black.AllPieces
             }
         }
     }
 
     fmt.println("SHOULD NEVER GET HERE")
-    return bitboards.BlackPawns
+    return BitBoard(0)
 }
 
 
@@ -242,5 +273,5 @@ test :: proc () {
     */
 
     bb : BitBoard = (1 << 5) | (1 << 3) | (1 << 7) | (1 << 23)
-    fmt.println("num_ones:", count_ones(bb))
+    fmt.println("num_ones:", count_ones_bb(bb))
 }

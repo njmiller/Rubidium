@@ -195,15 +195,19 @@ get_permutation :: proc(mask : BitBoard, index : BitBoard) -> BitBoard {
 
 //Code to generate magic numbers
 a : rand.Rand = rand.create(1123)
+
+/*
 random_u64_fewbits :: proc() -> BitBoard {
     return BitBoard(rand.uint64(&a) & rand.uint64(&a) & rand.uint64(&a))
 }
+*/
 
-random_u64_fewbits2 :: proc() -> u64 {
+random_u64_fewbits :: proc() -> u64 {
     return rand.uint64(&a) & rand.uint64(&a) & rand.uint64(&a)
 }
 
-count_ones :: proc(b : BitBoard) -> int {
+
+count_ones_bb :: proc(b : BitBoard) -> int {
     r : int = 0
     bp : BitBoard = b
     for (bp > 0) {
@@ -213,7 +217,8 @@ count_ones :: proc(b : BitBoard) -> int {
     return r
 }
 
-count_ones2 :: proc(b : u64) -> int {
+
+count_ones_u64 :: proc(b : u64) -> int {
     r : int = 0
     bp : u64 = b
     for (bp > 0) {
@@ -249,6 +254,7 @@ index_to_bb :: proc(index : int, bits : int, m : BitBoard) -> BitBoard {
     return result
 }
 
+/*
 rmask :: proc(sq : int) -> BitBoard {
     result : BitBoard = 0
     rk, fl : int = sq/8, sq%8
@@ -319,16 +325,20 @@ batt :: proc(sq : int, block : BitBoard) -> BitBoard {
 
     return result
 }
+*/
 
 //This just calculates the hash
+/*
 transform :: proc(b : BitBoard, magic : BitBoard, bits : int) -> int {
     return int((b*magic) >> u64(64 - bits))
 }
+*/
 
-transform2 :: proc(b : BitBoard, magic : u64, bits : int) -> int {
+transform :: proc(b : BitBoard, magic : u64, bits : int) -> int {
     return int((u64(b)*magic) >> u64(64 - bits))
 }
 
+/*
 find_magic :: proc(sq : int, m : int, bishop : bool) -> BitBoard {
     mask, magic : BitBoard
     b, a, used : [4096]BitBoard
@@ -356,8 +366,9 @@ find_magic :: proc(sq : int, m : int, bishop : bool) -> BitBoard {
     fmt.println("***Failed***")
     return 0
 }
+*/
 
-find_magic2 :: proc(sq : int, m : int, bishop : bool) -> u64 {
+find_magic :: proc(sq : int, m : int, bishop : bool) -> u64 {
     mask : BitBoard
     magic : u64
     b, a, used : [4096]BitBoard
@@ -378,15 +389,16 @@ find_magic2 :: proc(sq : int, m : int, bishop : bool) -> u64 {
     }
 
     //Randomly determine a magic number and check to see if it is valid
-    //(i.e. if permutations with different sets of valid moves have the same hash)
-    //If it is not valid, try again. We keep trying until we find a valid magic number
+    //(i.e. if permutations with different sets of valid moves have the same hash, 
+    //then it is not a valid magic number)
+    //If it is not valid, try again. We keep trying until we find a valid magic number.
+    //The limit on the number of tries is large enough so that we should always find a magic number
     for k in 0..<100000000 {
-        magic = random_u64_fewbits2()
-        if (count_ones2((u64(mask) * magic) & 0xFF00000000000000) < 6) do continue
+        magic = random_u64_fewbits()
+        if (count_ones_u64((u64(mask) * magic) & 0xFF00000000000000) < 6) do continue
         for i in 0..<4096 do used[i] = 0
         for i, fail = 0, false; !fail && i < nperm; i=i+1 {
-            j = transform2(b[i], magic, m)
-            //j = (uint64(b[i])*magic) >> u64(64 - m))
+            j = transform(b[i], magic, m)
             if (used[j] == 0) do used[j] = a[i]
             else if (used[j] != a[i]) do fail = true
         }
@@ -399,17 +411,17 @@ find_magic2 :: proc(sq : int, m : int, bishop : bool) -> u64 {
 generate_magics :: proc() {
     square : int
     magic_val : BitBoard
+    magic_val2 : u64
 
     fmt.println("RMagic = ")
-    //for square = 0; square < 64; square += 1 {
     for square in 0..<64 {
-        magic_val = find_magic(square, magic_rook_shifts[square], false)
-        fmt.println(square, ": ", magic_val)
+        magic_val2 = find_magic(square, magic_rook_shifts[square], false)
+        fmt.println(square, ": ", magic_val2)
     }
+
     fmt.println("BMagic = ")
-    //for square = 0; square < 64; square += 1 {
     for square in 0..<64 {
-        magic_val = find_magic(square, magic_bishop_shifts[square], true)
-        fmt.println(square, ": ", magic_val)
+        magic_val2 = find_magic(square, magic_bishop_shifts[square], true)
+        fmt.println(square, ": ", magic_val2)
     }
 }

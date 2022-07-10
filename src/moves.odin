@@ -4,8 +4,8 @@ import "core:container/queue"
 import "core:fmt"
 
 Move :: struct {
-    pos_init : u32,
-    pos_final : u32,
+    pos_init : int,
+    pos_final : int,
     piece : Piece,
     //check : bool,
     //capture : bool,
@@ -145,78 +145,125 @@ get_queen_moves :: proc(sq : int, occupancy : BitBoard) -> BitBoard {
 
 gen_moves :: proc(position : GamePosition, color : Color) {
     //This is better than the separate procedures because we only have to loop over a single bitboard
-    i : int
     moves : queue.Queue(Move)
+    my_pos, opp_pos : PositionOneColor
+    pos_bb, moves_bb, captures_bb : BitBoard
+    piece : Piece
 
     /*
     if color == .White {
-        my_bb = position.WhiteAllPieces
-        opp_bb = position.BlackAllPieces
+        my_pos = position.White
+        opp_pos = position.Black
     } else if color == .Black {
-        my_bb = position.BlackAllPieces
-        opp_bb = position.WhiteAllPieces
+        my_pos = position.Black
+        opp_pos = position.White
+    }
+    */
+
+    switch color {
+        case .White:
+            my_pos = position.White
+            opp_pos = position.Black
+        case .Black:
+            my_pos = position.Black
+            opp_pos = position.White
     }
 
-    for i in 0..<64 {
-        pos_bb = BitBoard(1) << uint(i)
+    //TODO: Maybe do pop_first_bit for quicker move generation. Would need to time it
+    //to see if it is faster
+    for sq in 0..<64 {
+        pos_bb = BitBoard(1) << uint(sq)
         switch {
-            case (pos_bb & WhitePawns) && color == .White:
+            case (pos_bb & position.White.Pawns) != 0 && (color == .White):
                 fmt.println("TEST")
+                piece = Piece{PieceType.Pawn, color}
+            case (pos_bb & my_pos.Knights) != 0 :
+                piece = Piece{PieceType.Knight, color}
+                moves_bb = knight_moves[sq] & ~my_pos.AllPieces
+                captures_bb = knight_moves[sq] & opp_pos.AllPieces
+            case (pos_bb & my_pos.Rooks) != 0 :
+                piece = Piece{PieceType.Rook, color}
+                moves_bb = get_rook_moves(sq, my_pos.AllPieces | opp_pos.AllPieces)
+                captures_bb = moves_bb & opp_pos.AllPieces
+                moves_bb = moves_bb & ~captures_bb
+            case (pos_bb & my_pos.Bishops) != 0 :
+                piece = Piece{PieceType.Bishop, color}
+                moves_bb = get_bishop_moves(sq, my_pos.AllPieces | opp_pos.AllPieces)
+                captures_bb = moves_bb & opp_pos.AllPieces
+                moves_bb = moves_bb & ~captures_bb
+            case (pos_bb & my_pos.Queens) != 0 :
+                piece = Piece{PieceType.Queen, color}
+                moves_bb = get_queen_moves(sq, my_pos.AllPieces | opp_pos.AllPieces)
+                captures_bb = moves_bb & opp_pos.AllPieces
+                moves_bb = moves_bb & ~captures_bb
+            case (pos_bb & my_pos.King) != 0 :
+                piece = Piece{PieceType.King, color}
+                moves_bb = king_moves[sq] & ~my_pos.AllPieces
+                captures_bb = king_moves[sq] & opp_pos.AllPieces
         }
-    }
-    */
-
-
-    //TODO: Is there a better way to do this???
-    /*
-    if color == Color.White {
-        /all_pieces = position.WhiteAllPieces
-        pawns = position.WhitePawns
-        knights = position.WhiteKnights
-        bishops = position.WhiteBishops
-        rooks = position.WhiteRooks
-        queens = position.WhiteQueens
-        king = position.WhiteKing
-        opp_pieces = position.BlackAllPieces
-    } else if color == Color.Black {
-        all_pieces = position.BlackAllPieces
-        pawns = position.BlackPawns
-        knights = position.BkackKnights
-        bishops = position.BlackBishops
-        rooks = position.BlackRooks
-        queens = position.BlackQueens
-        king = position.BlackKing
-        opp_pieces = position.WhiteAllPieces
+        bb_to_moves(&moves, sq, piece, moves_bb, captures_bb)
     }
 
-    for i in 0..<64 {
-        pos_shift = 1 << u64(i)
-        //if (pos_shift &)
+    check_castle: bool = true
+    if check_castle do gen_castle_move(&moves, color, my_pos, opp_pos)
 
-        if (pos_shift & pawns) {
-            println("DO STUFF HERE")
-        }
-
-        if (pos_shift & knights > 0) {
-            pos_final = knight_patterns[i] &~ friendly_pieces
-            captures = knight_patterns[i] & opp_pieces
-        }
-
-    }
-    */
 }
 
-bitboard_to_move :: proc(pos_init: u32, pos_final: BitBoard, piece: Piece, moves: queue.Queue) {
+gen_castle_move :: proc(moves : ^queue.Queue(Move), color : Color, my_pos : PositionOneColor, opp_pos : PositionOneColor) {
+    
+    //O-O
 
+    //O-O-O
+}
+
+bb_to_moves :: proc(moves : ^queue.Queue(Move), sq: int, piece : Piece, moves_bb : BitBoard, captures_bb : BitBoard) {
+
+    //TODO: Check to see if I need separate bitboard inputs for standard moves and captures
+
+    bb_tmp : BitBoard
+    sq_fin : int
     move : Move
+    flags : bit_set[0..<4] = {}
 
-    pos_shift : BitBoard = pos_final
-    for i in 0..<64 {
-        pos_shift = pos_shift >> 1
-        if (pos_shift & 0x01) == 1 {
-            move = Move{pos_init, i, piece, bit_set[0..<4]}
-            //moves.push_back(move)
-        }
+    bb_tmp = moves_bb
+    for bb_tmp != 0 {
+        sq_fin = pop_first_bit(&bb_tmp) + 1
+        move = Move{sq, sq_fin, piece, flags}
+        queue.push_back(moves, move)
     }
 
+    bb_tmp = captures_bb
+    for bb_tmp != 0 {
+        sq_fin = pop_first_bit(&bb_tmp) + 1
+        move = Move{sq, sq_fin, piece, flags}
+        queue.push_front(moves, move)
+    }
+
+}
+
+apply_move :: proc(move : Move, position_in : GamePosition) -> GamePosition {
+
+    position_out : GamePosition
+    my_pos, opp_pos : ^PositionOneColor
+    sq_bb : BitBoard = BitBoard(1) << uint(move.pos_init - 1)
+
+    position_out = position_in
+
+    switch move.piece.color {
+        case .White:
+            my_pos = &position_out.White
+            opp_pos = &position_out.Black
+        case .Black:
+            my_pos = &position_out.Black
+            opp_pos = &position_out.White
+    }
+
+    /*
+    switch move.piece.piecetype {
+        case .Pawn:
+            my_pos.Pawns = 1
+    }
+    */
+
+    return position_out
 }
