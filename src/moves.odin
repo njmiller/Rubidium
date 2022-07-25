@@ -12,6 +12,13 @@ Move :: struct {
     flags : bit_set[0..<4],
 }
 
+//Structure to hold info needed to undo move
+MoveInfo :: struct {
+    capture : Piece,
+    castle : bit_set[0..<4],
+    en_passant : int,
+}
+
 knight_moves : [64]BitBoard
 king_moves : [64]BitBoard
 
@@ -143,12 +150,13 @@ get_queen_moves :: proc(sq : int, occupancy : BitBoard) -> BitBoard {
     return get_bishop_moves(sq, occupancy) | get_rook_moves(sq, occupancy)
 }
 
-gen_moves :: proc(position : GamePosition, color : Color) {
+gen_moves :: proc(position : ^GamePosition) -> ^queue.Queue(Move) {
     //This is better than the separate procedures because we only have to loop over a single bitboard
     moves : queue.Queue(Move)
     my_pos, opp_pos : PositionOneColor
     pos_bb, moves_bb, captures_bb : BitBoard
     piece : Piece
+    color : Color = position.Turn
 
     /*
     if color == .White {
@@ -207,12 +215,16 @@ gen_moves :: proc(position : GamePosition, color : Color) {
     check_castle: bool = true
     if check_castle do gen_castle_move(&moves, color, my_pos, opp_pos)
 
+    return &moves
+
 }
 
 gen_castle_move :: proc(moves : ^queue.Queue(Move), color : Color, my_pos : PositionOneColor, opp_pos : PositionOneColor) {
     
     //O-O
-
+    if color == .White {
+        
+    }
     //O-O-O
 }
 
@@ -266,4 +278,21 @@ apply_move :: proc(move : Move, position_in : GamePosition) -> GamePosition {
     */
 
     return position_out
+}
+
+//In place modifications are probably faster since memory doesn't
+//need to be allocated
+apply_move_inplace :: proc(move : ^Move, position : ^GamePosition) -> MoveInfo {
+    i : int
+    info : MoveInfo
+
+    //info.castle = position.flags
+
+    //probably need to return data needed to undo move (i.e. piece
+    //captures or castling info)
+    return info
+}
+
+undo_move_inplace :: proc(move : ^Move, position : ^GamePosition) {
+    i : int
 }

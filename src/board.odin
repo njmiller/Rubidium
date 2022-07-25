@@ -66,7 +66,7 @@ GamePosition :: struct {
 
     Castling : u8,
     EnPassant : uint,
-    turn : Color,
+    Turn : Color,
 }
 
 Color :: enum {
@@ -153,6 +153,13 @@ rank_file_to_bb :: proc(rank : int, file : int) -> BitBoard {
 rank_file_to_sq :: proc(rank : int, file : int) -> int {
     //return (rank-1)*8 + file
     return 8*rank + file
+}
+
+mirror_sq :: proc(sq: int) -> int {
+    rank, file : int
+    rank, file = sq_to_rank_file(sq)
+    rank = 7-rank
+    return rank_file_to_sq(rank, file)
 }
 
 display_bitboard :: proc(bitboard : BitBoard) {

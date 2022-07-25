@@ -2,6 +2,7 @@ package main
 
 import "core:fmt"
 import "core:strconv"
+import "core:math/bits"
 
 process_fen :: proc(fen : string) -> GamePosition {
     pos_out : GamePosition
@@ -76,13 +77,15 @@ main :: proc() {
     init_king_moves()
     init_magic_bitboards()
 
-    /*
+    
     occ = BitBoard(1) << 16
     occ |= BitBoard(1) << 17
     occ |= BitBoard(1) << 18
     occ |= BitBoard(1) << 10
     occ |= BitBoard(1) << 2
 
+    fmt.println("FFF:", bits.count_ones(u64(occ)))
+    /*
     occ |= BitBoard(1) << 0
 
     fmt.println("Occupancy")
@@ -114,8 +117,8 @@ main :: proc() {
 
     //mask = rmask(sq)
     //display_bitboard(mask)
-    mask = get_rook_mask(sq)
-    display_bitboard(mask)
+    //mask = get_rook_mask(sq)
+    //display_bitboard(mask)
 
     /*
     n : int = magic_rook_shifts[sq]

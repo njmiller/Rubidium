@@ -2,6 +2,7 @@ package main
 
 import "core:fmt"
 import "core:math/rand"
+import "core:math/bits"
 import "core:container/queue"
 
 //Shifts are equal to the number of bits needed to describe
@@ -208,25 +209,30 @@ random_u64_fewbits :: proc() -> u64 {
 
 
 count_ones_bb :: proc(b : BitBoard) -> int {
+    /*
     r : int = 0
     bp : BitBoard = b
-    for (bp > 0) {
-        r = r + 1
+    for (bp != 0) {
+        r += 1
         bp = bp & (bp-1)
     }
     return r
+    */
+    return int(bits.count_ones(u64(b)))
 }
 
 
+/*
 count_ones_u64 :: proc(b : u64) -> int {
     r : int = 0
     bp : u64 = b
-    for (bp > 0) {
-        r = r + 1
+    for (bp != 0) {
+        r += 1
         bp = bp & (bp-1)
     }
     return r
 }
+*/
 
 BitTable := [64]int{
     63, 30, 3, 32, 25, 41, 22, 33, 15, 50, 42, 13, 11, 53, 19, 34, 61, 29, 2,
@@ -395,7 +401,8 @@ find_magic :: proc(sq : int, m : int, bishop : bool) -> u64 {
     //The limit on the number of tries is large enough so that we should always find a magic number
     for k in 0..<100000000 {
         magic = random_u64_fewbits()
-        if (count_ones_u64((u64(mask) * magic) & 0xFF00000000000000) < 6) do continue
+        //if (count_ones_u64((u64(mask) * magic) & 0xFF00000000000000) < 6) do continue
+        if (bits.count_ones((u64(mask) * magic) & 0xFF00000000000000) < 6) do continue
         for i in 0..<4096 do used[i] = 0
         for i, fail = 0, false; !fail && i < nperm; i=i+1 {
             j = transform(b[i], magic, m)
