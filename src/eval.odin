@@ -3,12 +3,13 @@ package main
 import "core:math/bits"
 
 KING_CP :: 100000
-QUEEN_CP ::  900
+QUEEN_CP :: 900
 ROOK_CP :: 500
 BISHOP_CP :: 330
 KNIGHT_CP :: 320
 PAWN_CP :: 100
 
+//odinfmt: disable
 pawn_square_table := [64]int{
     0,  0,  0,  0,  0,  0,  0,  0,
     5, 10, 10,-20,-20, 10, 10,  5,
@@ -85,128 +86,155 @@ king_square_end := [64]int{
     -30,-20,-10,  0,  0,-10,-20,-30,
     -50,-40,-30,-20,-20,-30,-40,-50,
 }
+//odinfmt: enable
 
-num_pieces :: proc(bb : BitBoard) -> int {
-    return count_ones_bb(bb)
+num_pieces :: proc(bb: BitBoard) -> int {
+	return count_ones_bb(bb)
 }
 
-eval_position :: proc(pos : ^GamePosition) -> int {
-    score : int
-    bb_tmp : BitBoard
-    n_wqueen, n_bqueen : int
-    n_wpieces, n_bpieces : int
-    sq, sq2 : int
-    king_square_table : [64]int
+score_update :: #force_inline proc(
+	bb: BitBoard,
+	score_piece: int,
+	score_square: [64]int,
+	mirror: bool,
+) -> (
+	int,
+	int,
+) {
+	score := 0
+	n_piece := 0
+	bb_tmp := bb
+	for (bb_tmp != 0) {
+		n_piece += 1
+		sq := pop_first_bit(&bb_tmp)
+		if mirror do sq = mirror_sq(sq)
+		score += score_piece
+		score += score_square[sq]
+	}
 
-    //Queen
-    n_wqueen = 0
-    bb_tmp = pos.White.Queens
-    for (bb_tmp != 0) {
-        n_wqueen += 1
-        sq = pop_first_bit(&bb_tmp)
-        score += QUEEN_CP
-        score += queen_square_table[sq]
-    }
+	return score, n_piece
+}
 
-    n_bqueen = 0
-    bb_tmp = pos.Black.Queens
-    for (bb_tmp != 0) {
-        n_bqueen += 1
-        sq = pop_first_bit(&bb_tmp)
-        sq2 = mirror_sq(sq)
-        score -= QUEEN_CP
-        score -= queen_square_table[sq2]
-    }
+eval_position :: proc(pos: ^GamePosition) -> int {
+	bb_tmp: BitBoard
+	sq2: int
 
-    n_wpieces = 0
-    n_bpieces = 0
-    //Rook
-    bb_tmp = pos.White.Rooks
-    for (bb_tmp != 0) {
-        n_wpieces += 1
-        sq = pop_first_bit(&bb_tmp)
-        score += ROOK_CP
-        score += rook_square_table[sq]
-    }
+	score := 0
+	score_tmp: int
 
-    bb_tmp = pos.Black.Rooks
-    for (bb_tmp != 0) {
-        n_bpieces = 0
-        sq = pop_first_bit(&bb_tmp)
-        sq2 = mirror_sq(sq)
-        score -= ROOK_CP
-        score -= rook_square_table[sq2]
-    }
+	//Queen
+	n_wqueen := 0
+	bb_tmp = pos.white.Queens
+	for (bb_tmp != 0) {
+		n_wqueen += 1
+		sq := pop_first_bit(&bb_tmp)
+		score += QUEEN_CP
+		score += queen_square_table[sq]
+	}
 
-    //Knight
-    bb_tmp = pos.White.Knights
-    for (bb_tmp != 0) {
-        n_wpieces += 1
-        sq = pop_first_bit(&bb_tmp)
-        score += KNIGHT_CP
-        score += knight_square_table[sq]
-    }
+	// score_wqueen, n_wqueen2 := score_update(pos.White.Queens, QUEEN_CP, queen_square_table, false)
 
-    bb_tmp = pos.Black.Knights
-    for (bb_tmp != 0) {
-        n_bpieces = 0
-        sq = pop_first_bit(&bb_tmp)
-        sq2 = mirror_sq(sq)
-        score -= KNIGHT_CP
-        score -= knight_square_table[sq2]
-    }
 
-    //Bishop
-    bb_tmp = pos.White.Bishops
-    for (bb_tmp != 0) {
-        n_wpieces += 1
-        sq = pop_first_bit(&bb_tmp)
-        score += BISHOP_CP
-        score += bishop_square_table[sq]
-    }
+	n_bqueen := 0
+	bb_tmp = pos.black.Queens
+	for (bb_tmp != 0) {
+		n_bqueen += 1
+		sq := pop_first_bit(&bb_tmp)
+		sq = mirror_sq(sq)
+		score -= QUEEN_CP
+		score -= queen_square_table[sq]
+	}
 
-    bb_tmp = pos.Black.Bishops
-    for (bb_tmp != 0) {
-        n_bpieces = 0
-        sq = pop_first_bit(&bb_tmp)
-        sq2 = mirror_sq(sq)
-        score -= BISHOP_CP
-        score -= bishop_square_table[sq2]
-    }
+	n_wpieces := 0
+	n_bpieces := 0
+	//Rook
+	bb_tmp = pos.white.Rooks
+	for (bb_tmp != 0) {
+		n_wpieces += 1
+		sq := pop_first_bit(&bb_tmp)
+		score += ROOK_CP
+		score += rook_square_table[sq]
+	}
 
-    //Pawn
-    bb_tmp = pos.White.Pawns
-    for (bb_tmp != 0) {
-        sq = pop_first_bit(&bb_tmp)
-        score += PAWN_CP
-        score += pawn_square_table[sq]
-    }
+	bb_tmp = pos.black.Rooks
+	for (bb_tmp != 0) {
+		n_bpieces = 0
+		sq := pop_first_bit(&bb_tmp)
+		sq = mirror_sq(sq)
+		score -= ROOK_CP
+		score -= rook_square_table[sq]
+	}
 
-    bb_tmp = pos.Black.Queens
-    for (bb_tmp != 0) {
-        sq = pop_first_bit(&bb_tmp)
-        sq2 = mirror_sq(sq)
-        score -= PAWN_CP
-        score -= pawn_square_table[sq2]
-    }
-    
-    //King
+	//Knight
+	bb_tmp = pos.white.Knights
+	for (bb_tmp != 0) {
+		n_wpieces += 1
+		sq := pop_first_bit(&bb_tmp)
+		score += KNIGHT_CP
+		score += knight_square_table[sq]
+	}
 
-    //determine which of the king square tables to use
-    //TODO: See if this copies the whole arrays. We want just a reference to the original end and mid arrays
-    if (pos.White.Queens == 0 ) && (pos.Black.Queens == 0) {
-        king_square_table = king_square_end
-    } else {
-        king_square_table = king_square_mid
-    }
+	bb_tmp = pos.black.Knights
+	for (bb_tmp != 0) {
+		n_bpieces = 0
+		sq := pop_first_bit(&bb_tmp)
+		sq = mirror_sq(sq)
+		score -= KNIGHT_CP
+		score -= knight_square_table[sq]
+	}
 
-    bb_tmp = pos.White.King
-    sq = pop_first_bit(&bb_tmp)
-    score += king_square_table[sq]
-    bb_tmp = pos.Black.King
-    sq = pop_first_bit(&bb_tmp)
-    sq2 = mirror_sq(sq)
-    score -= king_square_table[sq]
-    
-    return score
+	//Bishop
+	bb_tmp = pos.white.Bishops
+	for (bb_tmp != 0) {
+		n_wpieces += 1
+		sq := pop_first_bit(&bb_tmp)
+		score += BISHOP_CP
+		score += bishop_square_table[sq]
+	}
+
+	bb_tmp = pos.black.Bishops
+	for (bb_tmp != 0) {
+		n_bpieces = 0
+		sq := pop_first_bit(&bb_tmp)
+		sq = mirror_sq(sq)
+		score -= BISHOP_CP
+		score -= bishop_square_table[sq]
+	}
+
+	//Pawn
+	bb_tmp = pos.white.Pawns
+	for (bb_tmp != 0) {
+		sq := pop_first_bit(&bb_tmp)
+		score += PAWN_CP
+		score += pawn_square_table[sq]
+	}
+
+	bb_tmp = pos.black.Pawns
+	for (bb_tmp != 0) {
+		sq := pop_first_bit(&bb_tmp)
+		sq = mirror_sq(sq)
+		score -= PAWN_CP
+		score -= pawn_square_table[sq]
+	}
+
+	//King
+
+	//determine which of the king square tables to use
+	//TODO: See if this copies the whole arrays. We want just a reference to the original end and mid arrays
+	king_square_table: [64]int
+	if (pos.white.Queens == 0) && (pos.black.Queens == 0) {
+		king_square_table = king_square_end
+	} else {
+		king_square_table = king_square_mid
+	}
+
+	bb_tmp = pos.white.King
+	sq := pop_first_bit(&bb_tmp)
+	score += king_square_table[sq]
+	bb_tmp = pos.black.King
+	sq = pop_first_bit(&bb_tmp)
+	sq2 = mirror_sq(sq)
+	score -= king_square_table[sq]
+
+	return score
 }
