@@ -1,5 +1,6 @@
 package main
 
+import "core:fmt"
 import "core:testing"
 
 @(test)
@@ -70,4 +71,19 @@ test_process_fen :: proc(_: ^testing.T) {
 
 	assert(pos.white.Pawns == white_pawns)
 	assert(pos.black.Pawns == black_pawns)
+
+	assert(pos.castling == {.WHITEKINGSIDE, .WHITEQUEENSIDE, .BLACKKINGSIDE, .BLACKQUEENSIDE})
+	assert(pos.en_passant == -1)
+	assert(pos.turn == .White)
+
+	fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b Kk e3 7 10"
+	pos = process_fen(fen)
+
+	assert(pos.en_passant == idx_E3)
+	assert(pos.castling == {.WHITEKINGSIDE, .BLACKKINGSIDE})
+	assert(pos.halfmove == 7)
+	assert(pos.turn == .Black)
+	assert(pos.movenum == 10)
+
+
 }

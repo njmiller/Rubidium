@@ -17,8 +17,8 @@ Move :: struct {
 MoveInfo :: struct {
 	capture:    Piece,
 	// castle:     bit_set[0 ..< 4],
-	castling:   u8,
-	en_passant: uint,
+	castling:   bit_set[Castling],
+	en_passant: int,
 }
 
 knight_moves: [64]BitBoard
@@ -267,38 +267,46 @@ bb_to_moves :: proc(
 
 }
 
-apply_move :: proc(move: ^Move, position_in: GamePosition) -> (GamePosition, ^MoveInfo) {
+/*
+apply_move :: proc(move: Move, position_in: GamePosition) -> (GamePosition, MoveInfo) {
 
 	position_out := position_in
 	info := apply_move_inplace(move, &position_out)
 
 	return position_out, info
 }
+*/
 
 //In place modifications are probably faster since memory doesn't
 //need to be allocated
-apply_move_inplace :: proc(move: ^Move, position: ^GamePosition) -> ^MoveInfo {
+apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
 
 	sq_bb_init: BitBoard = BitBoard(1) << uint(move.pos_init)
 	sq_bb_final: BitBoard = BitBoard(1) << uint(move.pos_final)
 
-	info := new(MoveInfo)
+	info: MoveInfo
 	info.castling = position.castling
 	info.en_passant = position.en_passant
 
 	my_pos, opp_pos: ^PositionOneColor
+	opp_color: Color
 	switch move.piece.color {
 	case .White:
 		my_pos = &position.white
 		opp_pos = &position.black
+		opp_color = .Black
+		position.turn = .Black
 	case .Black:
 		my_pos = &position.black
 		opp_pos = &position.white
+		opp_color = .White
+		position.turn = .White
 	}
 
 
-	pos_final: uint = auto_cast move.pos_final
+	// pos_final: uint = auto_cast move.pos_final
 	is_capture := (sq_bb_final & opp_pos.AllPieces) != 0
+	// is_capture := move.is_capture
 
 	switch move.piece.piecetype {
 	case .Pawn:
@@ -309,6 +317,17 @@ apply_move_inplace :: proc(move: ^Move, position: ^GamePosition) -> ^MoveInfo {
 			my_pos.Queens |= sq_bb_final
 		} else {
 			my_pos.Pawns |= sq_bb_final
+			// Check for en passant square
+			if abs(move.pos_final - move.pos_init) == 16 {
+				switch move.piece.color {
+				case .White:
+					position.en_passant = move.pos_init + 8
+				case .Black:
+					position.en_passant = move.pos_init - 8
+				}
+			} else {
+				position.en_passant = -1
+			}
 		}
 	case .Knight:
 		my_pos.Knights &~= sq_bb_init
@@ -330,17 +349,56 @@ apply_move_inplace :: proc(move: ^Move, position: ^GamePosition) -> ^MoveInfo {
 	}
 
 	if move.is_capture {
-		opp_pos.Pawns &~= sq_bb_final
-		opp_pos.Knights &~= sq_bb_final
-		opp_pos.Bishops &~= sq_bb_final
-		opp_pos.Rooks &~= sq_bb_final
-		opp_pos.Queens &~= sq_bb_final
+		if sq_bb_final & opp_pos.Pawns != 0 {
+			opp_pos.Pawns &~= sq_bb_final
+			info.capture = {.Pawn, opp_color}
+		} else if sq_bb_final & opp_pos.Knights != 0 {
+			opp_pos.Knights &~= sq_bb_final
+			info.capture = {.Knight, opp_color}
+		} else if sq_bb_final & opp_pos.Bishops != 0 {
+			opp_pos.Bishops &~= sq_bb_final
+			info.capture = {.Bishop, opp_color}
+		} else if sq_bb_final & opp_pos.Rooks != 0 {
+			opp_pos.Rooks &~= sq_bb_final
+			info.capture = {.Rook, opp_color}
+		} else if sq_bb_final & opp_pos.Queens != 0 {
+			opp_pos.Queens &~= sq_bb_final
+			info.capture = {.Queen, opp_color}
+		}
 		opp_pos.AllPieces &~= sq_bb_final
 	}
 
 	return info
 }
 
-undo_move_inplace :: proc(move: ^Move, position: ^GamePosition) {
-	i: int
+/*
+undo_move :: proc(move: Move, info: MoveInfo, position: GamePosition) -> GamePosition {
+	position_tmp := position
+	undo_move_inplace(move, info, &position_tmp)
+	return position_tmp
+}
+*/
+
+undo_move_inplace :: proc(move: Move, info: MoveInfo, position: ^GamePosition) {
+
+	my_pos, opp_pos: ^PositionOneColor
+	opp_color: Color
+	switch move.piece.color {
+	case .White:
+		my_pos = &position.white
+		opp_pos = &position.black
+		opp_color = .Black
+		position.turn = .White
+	case .Black:
+		my_pos = &position.black
+		opp_pos = &position.white
+		opp_color = .White
+		position.turn = .Black
+	}
+
+	// Restore previous en_passant and castling values
+	position.en_passant = info.en_passant
+	position.castling = info.castling
+
+
 }

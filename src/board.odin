@@ -170,9 +170,18 @@ PositionOneColor :: struct {
 GamePosition :: struct {
 	white:      PositionOneColor,
 	black:      PositionOneColor,
-	castling:   u8, // Says what castling is available
-	en_passant: uint, // What square is available for en passant capture
+	castling:   bit_set[Castling], // Says what castling is available
+	en_passant: int, // What square is available for en passant capture
 	turn:       Color,
+	halfmove:   int,
+	movenum:    int,
+}
+
+Castling :: enum {
+	WHITEKINGSIDE,
+	WHITEQUEENSIDE,
+	BLACKKINGSIDE,
+	BLACKQUEENSIDE,
 }
 
 Color :: enum {
@@ -215,8 +224,8 @@ empty_position :: proc() -> GamePosition {
 	pos.white = empty_position_onecolor()
 	pos.black = empty_position_onecolor()
 
-	pos.castling = 0
-	pos.en_passant = 0
+	pos.castling = {}
+	pos.en_passant = -1
 
 	return pos
 }

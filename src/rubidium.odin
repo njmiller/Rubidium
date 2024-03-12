@@ -11,9 +11,9 @@ process_fen :: proc(fen: string) -> GamePosition {
 	shift: uint
 	pos_out = empty_position()
 
-	col, row, idx: uint
+	col, row: uint
 
-	idx = 0
+	idx := 0
 	col = 1
 	row = 8
 	for {
@@ -23,7 +23,6 @@ process_fen :: proc(fen: string) -> GamePosition {
 		switch fen[idx] {
 		case 'r':
 			pos_out.black.Rooks = pos_out.black.Rooks | bb_tmp
-		//fmt.println("B:", pos_out.blackRooks, " ", bb_tmp)
 		case 'p':
 			pos_out.black.Pawns = pos_out.black.Pawns | bb_tmp
 		case 'n':
@@ -36,7 +35,6 @@ process_fen :: proc(fen: string) -> GamePosition {
 			pos_out.black.King = pos_out.black.King | bb_tmp
 		case 'R':
 			pos_out.white.Rooks = pos_out.white.Rooks | bb_tmp
-		//fmt.println("W:", pos_out.whiteRooks, " ", bb_tmp)
 		case 'P':
 			pos_out.white.Pawns = pos_out.white.Pawns | bb_tmp
 		case 'N':
@@ -67,6 +65,73 @@ process_fen :: proc(fen: string) -> GamePosition {
 	}
 
 	//NOTE: Still need to do processing of castling
+	idx += 1
+	if fen[idx] == 'w' {
+		pos_out.turn = .White
+	} else if fen[idx] == 'b' {
+		pos_out.turn = .Black
+	} else {
+		panic("Issue with FEN color")
+	}
+
+	idx += 2
+	pos_out.castling = {}
+	is_castling := true
+	for is_castling {
+		switch fen[idx] {
+		case 'K':
+			pos_out.castling += {.WHITEKINGSIDE}
+		case 'Q':
+			pos_out.castling += {.WHITEQUEENSIDE}
+		case 'k':
+			pos_out.castling += {.BLACKKINGSIDE}
+		case 'q':
+			pos_out.castling += {.BLACKQUEENSIDE}
+		case ' ':
+			is_castling = false
+		}
+		idx += 1
+	}
+
+	is_enpassant := true
+	ep_rank: int
+	ep_file: int
+	for is_enpassant {
+		switch fen[idx] {
+		case '-':
+			pos_out.en_passant = -1
+			is_enpassant = false
+			idx += 1
+		case ' ':
+			pos_out.en_passant = rank_file_to_sq(ep_rank, ep_file)
+			is_enpassant = false
+		case 'a' ..= 'h':
+			ep_file = int(fen[idx]) - int('a')
+		case '1' ..= '8':
+			ep_rank = int(fen[idx]) - int('1')
+		}
+		idx += 1
+	}
+
+	is_hm := true
+	hm := 0
+	for is_hm {
+		switch fen[idx] {
+		case ' ':
+			is_hm = false
+		case '0' ..= '9':
+			hm = 10 * hm + int(fen[idx]) - int('0')
+		}
+		idx += 1
+	}
+	pos_out.halfmove = hm
+
+	nfen := len(fen)
+	movenum := 0
+	for i in idx ..< nfen {
+		movenum = 10 * movenum + int(fen[i]) - int('0')
+	}
+	pos_out.movenum = movenum
 
 	pos_out.black.AllPieces =
 		pos_out.black.King |

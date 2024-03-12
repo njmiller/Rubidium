@@ -14,9 +14,9 @@ alpha_beta_max :: proc(alpha: int, beta: int, depthleft: int, pos: ^GamePosition
 
 	for queue.len(moves^) > 0 {
 		move = queue.pop_front(moves)
-		apply_move_inplace(&move, pos)
+		move_info := apply_move_inplace(move, pos)
 		score = alpha_beta_min(alpha, beta, depthleft - 1, pos)
-		undo_move_inplace(&move, pos)
+		undo_move_inplace(move, move_info, pos)
 		if score >= beta do return beta
 		if score > alpha_out do alpha_out = score
 	}
@@ -35,9 +35,9 @@ alpha_beta_min :: proc(alpha: int, beta: int, depthleft: int, pos: ^GamePosition
 
 	for queue.len(moves^) > 0 {
 		move = queue.pop_front(moves)
-		apply_move_inplace(&move, pos)
+		info := apply_move_inplace(move, pos)
 		score = alpha_beta_min(alpha, beta, depthleft - 1, pos)
-		undo_move_inplace(&move, pos)
+		undo_move_inplace(move, info, pos)
 		if score <= alpha do return alpha
 		if score < beta_out do beta_out = score
 	}
