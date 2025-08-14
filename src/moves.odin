@@ -15,10 +15,12 @@ Move :: struct {
 // Structure to hold info needed to undo move. Constructed when
 // initial move is done.
 MoveInfo :: struct {
+	is_capture: bool,
 	capture:    Piece,
 	// castle:     bit_set[0 ..< 4],
 	castling:   bit_set[Castling],
 	en_passant: int,
+	halfmove:   int,
 }
 
 knight_moves: [64]BitBoard
@@ -287,6 +289,7 @@ apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
 	info: MoveInfo
 	info.castling = position.castling
 	info.en_passant = position.en_passant
+	info.halfmove = position.halfmove
 
 	my_pos, opp_pos: ^PositionOneColor
 	opp_color: Color
@@ -301,8 +304,8 @@ apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
 		opp_pos = &position.white
 		opp_color = .White
 		position.turn = .White
+		position.movenum += 1
 	}
-
 
 	// pos_final: uint = auto_cast move.pos_final
 	is_capture := (sq_bb_final & opp_pos.AllPieces) != 0
@@ -310,6 +313,7 @@ apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
 
 	switch move.piece.piecetype {
 	case .Pawn:
+		position.halfmove = 0
 		my_pos.Pawns &~= sq_bb_init
 		// Only doing queen promotion right now. Check is final position for pawn in
 		// on the first or last rank
@@ -330,25 +334,34 @@ apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
 			}
 		}
 	case .Knight:
+		position.halfmove += 1
 		my_pos.Knights &~= sq_bb_init
 		my_pos.Knights |= sq_bb_final
 	case .Bishop:
+		position.halfmove += 1
 		my_pos.Bishops &~= sq_bb_init
 		my_pos.Bishops |= sq_bb_final
 	case .Rook:
+		position.halfmove += 1
 		my_pos.Rooks &~= sq_bb_init
 		my_pos.Rooks |= sq_bb_final
 	case .Queen:
+		position.halfmove += 1
 		my_pos.Queens &~= sq_bb_init
 		my_pos.Queens |= sq_bb_final
 	case .King:
+		position.halfmove += 1
 		my_pos.King &~= sq_bb_init
 		my_pos.King |= sq_bb_final
 	case .All:
 		panic("Shouldn't have piece type as .All in move")
 	}
+	my_pos.AllPieces &~= sq_bb_init
+	my_pos.AllPieces |= sq_bb_final
 
+	info.is_capture = move.is_capture
 	if move.is_capture {
+		position.halfmove = 0
 		if sq_bb_final & opp_pos.Pawns != 0 {
 			opp_pos.Pawns &~= sq_bb_final
 			info.capture = {.Pawn, opp_color}
@@ -381,6 +394,9 @@ undo_move :: proc(move: Move, info: MoveInfo, position: GamePosition) -> GamePos
 
 undo_move_inplace :: proc(move: Move, info: MoveInfo, position: ^GamePosition) {
 
+	sq_bb_init: BitBoard = BitBoard(1) << uint(move.pos_init)
+	sq_bb_final: BitBoard = BitBoard(1) << uint(move.pos_final)
+
 	my_pos, opp_pos: ^PositionOneColor
 	opp_color: Color
 	switch move.piece.color {
@@ -399,6 +415,51 @@ undo_move_inplace :: proc(move: Move, info: MoveInfo, position: ^GamePosition) {
 	// Restore previous en_passant and castling values
 	position.en_passant = info.en_passant
 	position.castling = info.castling
+	position.halfmove = info.halfmove
 
+	switch move.piece.piecetype {
+	case .Pawn:
+		my_pos.Pawns &~= sq_bb_final
+		my_pos.Pawns |= sq_bb_init
+	case .Knight:
+		my_pos.Knights &~= sq_bb_final
+		my_pos.Knights |= sq_bb_init
+	case .Bishop:
+		my_pos.Bishops &~= sq_bb_final
+		my_pos.Bishops |= sq_bb_init
+	case .Rook:
+		my_pos.Rooks &~= sq_bb_final
+		my_pos.Rooks |= sq_bb_init
+	case .Queen:
+		my_pos.Queens &~= sq_bb_final
+		my_pos.Queens |= sq_bb_init
+	case .King:
+		my_pos.King &~= sq_bb_final
+		my_pos.King |= sq_bb_init
+	case .All:
+		panic("Shouldn't have piece type as .All in move")
+	}
+	my_pos.AllPieces &~= sq_bb_final
+	my_pos.AllPieces |= sq_bb_init
+
+	if info.is_capture {
+		switch info.capture.piecetype {
+		case .Pawn:
+			opp_pos.Pawns |= sq_bb_final
+		case .Knight:
+			opp_pos.Knights |= sq_bb_final
+		case .Bishop:
+			opp_pos.Bishops |= sq_bb_final
+		case .Rook:
+			opp_pos.Rooks |= sq_bb_final
+		case .Queen:
+			opp_pos.Queens |= sq_bb_final
+		case .King:
+			opp_pos.King |= sq_bb_final
+		case .All:
+			panic("Should have piece type as .All in move")
+		}
+		opp_pos.AllPieces |= sq_bb_final
+	}
 
 }

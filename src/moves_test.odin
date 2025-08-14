@@ -58,7 +58,28 @@ test_rook_moves :: proc(_: ^testing.T) {
 
 @(test)
 test_apply_move :: proc(_: ^testing.T) {
-	assert(1 == 1)
+	fen := "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+	pos := process_fen(fen)
+
+	piece := Piece{.Pawn, .White}
+	move := Move{idx_E2, idx_E4, piece, false}
+
+	pos_init := pos
+
+	info := apply_move_inplace(move, &pos)
+
+	assert(pos.turn == .Black)
+	assert(pos.en_passant == idx_E3)
+	// display_position(pos)
+	// display_position(pos_init)
+
+	undo_move_inplace(move, info, &pos)
+
+	// display_position(pos)
+
+	assert(pos.turn == .White)
+
+	assert(pos == pos_init)
 }
 
 @(test)
