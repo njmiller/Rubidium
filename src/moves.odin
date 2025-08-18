@@ -88,12 +88,12 @@ init_slider_move :: proc(sq: int, occupied: BitBoard, is_rook: bool) -> BitBoard
 	rf_min :: 0
 
 	delta_rook := matrix[2, 2]int{
-		0, 1, 
-		1, 0, 
+		0, 1,
+		1, 0,
 	}
 	delta_bishop := matrix[2, 2]int{
-		1, 1, 
-		1, -1, 
+		1, 1,
+		1, -1,
 	}
 
 	delta: matrix[2, 2]int
@@ -156,7 +156,9 @@ get_queen_moves :: proc(sq: int, occupancy: BitBoard) -> BitBoard {
 
 gen_moves :: proc(position: ^GamePosition) -> ^queue.Queue(Move) {
 	//This is better than the separate procedures because we only have to loop over a single bitboard
-	moves: queue.Queue(Move)
+	// moves: queue.Queue(Move)
+	moves := new(queue.Queue(Move))
+	queue.init(moves)
 
 	pos_bb, moves_bb, captures_bb: BitBoard
 	piece: Piece
@@ -214,14 +216,20 @@ gen_moves :: proc(position: ^GamePosition) -> ^queue.Queue(Move) {
 			moves_bb = king_moves[sq] & ~my_pos.AllPieces
 			captures_bb = king_moves[sq] & opp_pos.AllPieces
 		}
-		bb_to_moves(&moves, sq, piece, moves_bb, captures_bb)
+		bb_to_moves(moves, sq, piece, moves_bb, captures_bb)
 	}
 
 	check_castle: bool = true
-	if check_castle do gen_castle_move(&moves, color, my_pos, opp_pos)
+	if check_castle do gen_castle_move(moves, color, my_pos, opp_pos)
 
-	return &moves
+	return moves
 
+}
+
+//Free a moves queue
+free_moves :: proc(moves: ^queue.Queue(Move)) {
+	queue.destroy(moves)
+	free(moves)
 }
 
 gen_castle_move :: proc(

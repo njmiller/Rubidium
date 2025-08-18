@@ -22,8 +22,19 @@ test_knight_moves :: proc(_: ^testing.T) {
 }
 
 @(test)
-test_bishop_moves :: proc(_: ^testing.T) {
+test_magic_moves :: proc(t: ^testing.T) {
 	init_magic_bitboards()
+	defer free_magic_bitboards()
+
+	test_bishop_moves(t)
+	test_rook_moves(t)
+
+}
+
+// @(test)
+test_bishop_moves :: proc(_: ^testing.T) {
+	// init_magic_bitboards()
+	// defer free_magic_bitboards()
 
 	// Define an occupancy that will be used for testing
 	// bishop moves
@@ -38,11 +49,43 @@ test_bishop_moves :: proc(_: ^testing.T) {
 	assert(moves_B1 == bB1)
 	assert(moves_F3 == bF3)
 
+	// Additional test cases with different occupancy patterns
+
+	// Test bishop on central square with scattered occupancy
+	occupancy2 := B2 | F2 | B6 | F6
+	moves_D4 := get_bishop_moves(idx_D4, occupancy2)
+	bD4 := C3 | B2 | E5 | F6 | C5 | B6 | E3 | F2
+	assert(moves_D4 == bD4)
+
+	// Test bishop in corner with minimal blocking
+	occupancy3 := B7 | G2
+	moves_A8 := get_bishop_moves(idx_A8, occupancy3)
+	moves_H1 := get_bishop_moves(idx_H1, occupancy3)
+	bA8 := B7
+	bH1 := G2
+	assert(moves_A8 == bA8)
+	assert(moves_H1 == bH1)
+
+	// Test bishop with heavy occupancy blocking multiple directions
+	occupancy4 := C3 | C5 | E3 | E5
+	moves_D4_blocked := get_bishop_moves(idx_D4, occupancy4)
+	bD4_blocked := C3 | C5 | E3 | E5
+
+	assert(moves_D4_blocked == bD4_blocked)
+
+	// Test bishop on edge with partial blocking
+	occupancy5 := D6 | F4
+	moves_C7 := get_bishop_moves(idx_C7, occupancy5)
+	bC7 := B8 | D8 | B6 | A5 | D6
+
+	assert(moves_C7 == bC7)
 }
 
-@(test)
+
+// @(test)
 test_rook_moves :: proc(_: ^testing.T) {
-	init_magic_bitboards()
+	// init_magic_bitboards()
+	// defer free_magic_bitboards()
 
 	occupancy := G5 | G3 | D2 | F4
 
@@ -55,6 +98,7 @@ test_rook_moves :: proc(_: ^testing.T) {
 	assert(moves_G2 == bG2)
 	assert(moves_F5 == bF5)
 }
+
 
 @(test)
 test_apply_move :: proc(_: ^testing.T) {
