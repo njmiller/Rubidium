@@ -246,6 +246,10 @@ rank_file_to_sq :: proc(rank: int, file: int) -> int {
 	return 8 * rank + file
 }
 
+sq_to_bb :: #force_inline proc(sq: int) -> BitBoard {
+	return BitBoard(1) << uint(sq)
+}
+
 mirror_sq :: proc(sq: int) -> int {
 	rank, file: int
 	rank, file = sq_to_rank_file(sq)
@@ -359,33 +363,8 @@ get_bitboard :: proc(bitboards: GamePosition, piece: PieceType, color: Color) ->
 
 }
 
+gen_newgame :: proc() -> GamePosition {
+	pos := process_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 
-test :: proc() {
-	x: i32 = 5
-	fmt.println(x)
-
-	/*
-    a : rand.Rand = rand.create(1123)
-
-    //fmt.println(rand.Rand())
-    fmt.println(rand.uint64(&a))
-
-    left_side : BitBoard = 1085102592571150095
-    right_side : BitBoard = 17361641481138401520
-
-    k := []u32{0, 1, 2, 3, 4, 5, 6, 7}
-    j : u32
-    off : u32
-
-    for j2 in k {
-        for j in k {
-            off = 8*j2 + j
-            fmt.print((left_side & (1 << off)) >> off, " ")
-        }
-        fmt.println("")
-    }
-    */
-
-	bb: BitBoard = (1 << 5) | (1 << 3) | (1 << 7) | (1 << 23)
-	fmt.println("num_ones:", count_ones_bb(bb))
+	return pos
 }

@@ -114,12 +114,8 @@ test_apply_move :: proc(_: ^testing.T) {
 
 	assert(pos.turn == .Black)
 	assert(pos.en_passant == idx_E3)
-	// display_position(pos)
-	// display_position(pos_init)
 
 	undo_move_inplace(move, info, &pos)
-
-	// display_position(pos)
 
 	assert(pos.turn == .White)
 
