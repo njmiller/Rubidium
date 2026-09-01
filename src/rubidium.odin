@@ -167,6 +167,7 @@ main :: proc() {
 	init_knight_moves()
 	init_king_moves()
 	init_magic_bitboards()
+	defer free_magic_bitboards()
 
 
 	occ = BitBoard(1) << 16
@@ -235,4 +236,12 @@ main :: proc() {
     i = pop_first_bit(&bb_tmp)
     fmt.println("BBB", i, bb_tmp)
     */
+
+	pos = gen_newgame()
+
+	// display_position(pos)
+	// fmt.println(perft(1, &pos))
+	perft_divide(1, &pos)
+	// fmt.println(perft(2, &pos))
+
 }

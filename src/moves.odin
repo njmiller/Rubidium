@@ -2,6 +2,7 @@ package main
 
 import "core:container/queue"
 import "core:fmt"
+import "core:math/bits"
 
 // As minimal of info as possible to construct implement move
 Move :: struct {
@@ -154,6 +155,62 @@ get_queen_moves :: proc(sq: int, occupancy: BitBoard) -> BitBoard {
 	return get_bishop_moves(sq, occupancy) | get_rook_moves(sq, occupancy)
 }
 
+get_pawn_moves :: proc(
+	sq: int,
+	color: Color,
+	my_pieces: BitBoard,
+	opp_pieces: BitBoard,
+	en_passant: int,
+) -> (
+	moves_bb: BitBoard,
+	captures_bb: BitBoard,
+	ep_sq: int, // promotions_bb: BitBoard,
+) {
+	rank, file := sq_to_rank_file(sq)
+	sq_bb := sq_to_bb(sq)
+
+	direction: int
+	pos_mov_bb: BitBoard
+	rank_end, file_end: int
+	move_one: bool
+
+	occupancy := my_pieces | opp_pieces
+
+	// Add the en passant square to the enemies bitboard for capture calculation
+	ep_sq_bb: BitBoard = sq_to_bb(en_passant)
+	enemy := opp_pieces | ep_sq_bb
+
+	moves_bb = 0
+	captures_bb = 0
+
+
+	single_push, double_push, cap_left, cap_right: BitBoard = 0, 0, 0, 0
+	if color == .White {
+		single_push = (sq_bb << 8) & ~occupancy
+		double_push = ((single_push & RANK_3) << 8) & ~occupancy
+		cap_left = (sq_bb << 7) & enemy & ~FILE_H
+		cap_right = (sq_bb << 9) & enemy & ~FILE_A
+	} else {
+		single_push = (sq_bb >> 8) & ~occupancy
+		double_push = ((single_push & RANK_6) >> 8) & ~occupancy
+		cap_left = (sq_bb >> 9) & enemy & ~FILE_H
+		cap_right = (sq_bb >> 7) & enemy & ~FILE_A
+	}
+
+	if double_push != 0 {
+		if color == .White {
+			ep_sq = sq + 8
+		} else {
+			ep_sq = sq - 8
+		}
+	} else do ep_sq = -1
+
+	moves_bb = single_push | double_push
+	captures_bb = cap_left | cap_right
+
+	return moves_bb, captures_bb, ep_sq
+}
+
 gen_moves :: proc(position: ^GamePosition) -> ^queue.Queue(Move) {
 	//This is better than the separate procedures because we only have to loop over a single bitboard
 	// moves: queue.Queue(Move)
@@ -190,7 +247,16 @@ gen_moves :: proc(position: ^GamePosition) -> ^queue.Queue(Move) {
 		pos_bb = BitBoard(1) << uint(sq)
 		switch {
 		case (pos_bb & position.white.Pawns) != 0 && (color == .White):
-			fmt.println("TEST")
+			// fmt.println("TEST")
+			ep_sq: int
+			moves_bb, captures_bb, ep_sq = get_pawn_moves(
+				sq,
+				color,
+				my_pos.AllPieces,
+				opp_pos.AllPieces,
+				position.en_passant,
+			)
+
 			piece = Piece{PieceType.Pawn, color}
 		case (pos_bb & my_pos.Knights) != 0:
 			piece = Piece{PieceType.Knight, color}
@@ -198,17 +264,19 @@ gen_moves :: proc(position: ^GamePosition) -> ^queue.Queue(Move) {
 			captures_bb = knight_moves[sq] & opp_pos.AllPieces
 		case (pos_bb & my_pos.Rooks) != 0:
 			piece = Piece{PieceType.Rook, color}
-			moves_bb = get_rook_moves(sq, my_pos.AllPieces | opp_pos.AllPieces)
+			moves_bb = get_rook_moves(sq, my_pos.AllPieces | opp_pos.AllPieces) & ~my_pos.AllPieces
 			captures_bb = moves_bb & opp_pos.AllPieces
 			moves_bb = moves_bb & ~captures_bb
 		case (pos_bb & my_pos.Bishops) != 0:
 			piece = Piece{PieceType.Bishop, color}
-			moves_bb = get_bishop_moves(sq, my_pos.AllPieces | opp_pos.AllPieces)
+			moves_bb =
+				get_bishop_moves(sq, my_pos.AllPieces | opp_pos.AllPieces) & ~my_pos.AllPieces
 			captures_bb = moves_bb & opp_pos.AllPieces
 			moves_bb = moves_bb & ~captures_bb
 		case (pos_bb & my_pos.Queens) != 0:
 			piece = Piece{PieceType.Queen, color}
-			moves_bb = get_queen_moves(sq, my_pos.AllPieces | opp_pos.AllPieces)
+			moves_bb =
+				get_queen_moves(sq, my_pos.AllPieces | opp_pos.AllPieces) & ~my_pos.AllPieces
 			captures_bb = moves_bb & opp_pos.AllPieces
 			moves_bb = moves_bb & ~captures_bb
 		case (pos_bb & my_pos.King) != 0:
@@ -246,6 +314,64 @@ gen_castle_move :: proc(
 	//O-O-O
 }
 
+//Checks to see if the square sq is attacked by any pieces of by_color
+is_square_attacked :: proc(sq: int, by_color: Color, position: ^GamePosition) -> bool {
+	opp_pos := by_color == .White ? &position.white : &position.black
+
+	// 1. Knight attacks
+	if (knight_moves[sq] & opp_pos.Knights) != 0 do return true
+
+	// 2. King attacks (prevents moving the king next to the opponent king)
+	if (king_moves[sq] & opp_pos.King) != 0 do return true
+
+	// 3. Pawn attacks
+	rank, file := sq_to_rank_file(sq)
+	if by_color == .White {
+		// White pawns attack sq from below (e.g from sq-9 and sq-7)
+		if file != 0 && rank >= 1 {
+			if (opp_pos.Pawns & sq_to_bb(sq - 9)) != 0 do return true
+		}
+		if file != 7 && rank >= 1 {
+			if (opp_pos.Pawns & sq_to_bb(sq - 7)) != 0 do return true
+		}
+	} else {
+		//Black pawns attack sq from above (e.g from sq+7 and sq+9)
+		if file != 0 && rank <= 6 {
+			if (opp_pos.Pawns & sq_to_bb(sq + 7)) != 0 do return true
+		}
+		if file != 7 && rank <= 6 {
+			if (opp_pos.Pawns & sq_to_bb(sq + 9)) != 0 do return true
+		}
+	}
+
+	// 4. Sliding piece attacks (using magic bitboard lookups)
+	occupied := position.white.AllPieces | position.black.AllPieces
+
+	// Bishops and Queens
+	bishop_attacks := get_bishop_moves(sq, occupied)
+	if (bishop_attacks & (opp_pos.Bishops | opp_pos.Queens)) != 0 do return true
+
+	// Rooks and Queens
+	rook_attacks := get_rook_moves(sq, occupied)
+	if (rook_attacks & (opp_pos.Rooks | opp_pos.Queens)) != 0 do return true
+
+	return false
+}
+
+// To determine check, see whether the king's square is attacked by a piece of the opposing color
+is_in_check :: proc(color: Color, position: ^GamePosition) -> bool {
+	king_bb := color == .White ? position.white.King : position.black.King
+
+	// Handle custom setups with no king (e.q. tests)
+	if king_bb == 0 do return false
+
+	king_sq := bits.count_trailing_zeros(u64(king_bb))
+
+	opp_color := color == .White ? Color.Black : Color.White
+
+	return is_square_attacked(int(king_sq), opp_color, position)
+}
+
 bb_to_moves :: proc(
 	moves: ^queue.Queue(Move),
 	sq: int,
@@ -254,7 +380,10 @@ bb_to_moves :: proc(
 	captures_bb: BitBoard,
 ) {
 
-	//TODO: Check to see if I need separate bitboard inputs for standard moves and captures
+	if piece == .Pawn {
+		bb_to_pawn_moves(moves, sq, moves_bb, captures_bb)
+		return
+	}
 
 	bb_tmp: BitBoard
 	sq_fin: int
@@ -263,14 +392,14 @@ bb_to_moves :: proc(
 
 	bb_tmp = moves_bb
 	for bb_tmp != 0 {
-		sq_fin = pop_first_bit(&bb_tmp) + 1
+		sq_fin = pop_first_bit(&bb_tmp) // + 1
 		move = Move{sq, sq_fin, piece, false}
 		queue.push_back(moves, move)
 	}
 
 	bb_tmp = captures_bb
 	for bb_tmp != 0 {
-		sq_fin = pop_first_bit(&bb_tmp) + 1
+		sq_fin = pop_first_bit(&bb_tmp) // + 1
 		move = Move{sq, sq_fin, piece, true}
 		queue.push_front(moves, move)
 	}
@@ -470,4 +599,64 @@ undo_move_inplace :: proc(move: Move, info: MoveInfo, position: ^GamePosition) {
 		opp_pos.AllPieces |= sq_bb_final
 	}
 
+}
+
+perft :: proc(depth: int, position: ^GamePosition) -> u64 {
+	if depth == 0 do return 1
+
+	nodes: u64 = 0
+
+	moves := gen_moves(position)
+	defer free_moves(moves)
+
+	for queue.len(moves^) > 0 {
+		move := queue.pop_front(moves)
+		info := apply_move_inplace(move, position)
+
+		// if the move didn't leave our king in check, it is legal
+		if !is_in_check(move.piece.color, position) do nodes += perft(depth - 1, position)
+
+		undo_move_inplace(move, info, position)
+	}
+
+	return nodes
+}
+
+perft_divide :: proc(depth: int, position: ^GamePosition) -> u64 {
+	if depth <= 0 do return 0
+
+	total_nodes: u64 = 0
+	display_position(position^)
+	moves := gen_moves(position)
+	defer free(moves)
+
+	fmt.println("NMoves:", queue.len(moves^))
+
+	fmt.printf("\n--- Perft Divide Depth %d ---\n", depth)
+	for queue.len(moves^) > 0 {
+		move := queue.pop_front(moves)
+		info := apply_move_inplace(move, position)
+
+		if !is_in_check(move.piece.color, position) {
+			nodes := perft(depth - 1, position)
+			total_nodes += nodes
+
+			// Print move in UCI format (e.g. e2e4)
+			init_file := 'a' + u8(move.pos_init % 8)
+			init_rank := '1' + u8(move.pos_init / 8)
+
+			final_file := 'a' + u8(move.pos_final % 8)
+			final_rank := '1' + u8(move.pos_final / 8)
+
+			fmt.printf("%c%c%c%c: %d ", init_file, init_rank, final_file, final_rank, nodes)
+			fmt.println(move.piece.color, move.piece.piecetype)
+		}
+
+		undo_move_inplace(move, info, position)
+
+	}
+
+	fmt.printf("\nTotal leaf nodes: %d\n", total_nodes)
+
+	return total_nodes
 }
