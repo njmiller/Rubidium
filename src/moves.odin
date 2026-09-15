@@ -3,6 +3,7 @@ package main
 import "core:container/queue"
 import "core:fmt"
 import "core:math/bits"
+import "base:runtime"
 
 // As minimal of info as possible to construct implement move
 Move :: struct {
@@ -10,22 +11,37 @@ Move :: struct {
 	pos_final:  int,
 	piece:      Piece,
 	is_capture: bool,
-	// promotion:  PieceType,
+	promotion:  PieceType, // .Pawn means the move is not a promotion
 }
 
 // Structure to hold info needed to undo move. Constructed when
 // initial move is done.
 MoveInfo :: struct {
-	is_capture: bool,
-	capture:    Piece,
+	is_capture:    bool,
+	is_en_passant: bool,
+	capture:       Piece,
 	// castle:     bit_set[0 ..< 4],
-	castling:   bit_set[Castling],
-	en_passant: int,
-	halfmove:   int,
+	castling:      bit_set[Castling],
+	en_passant:    int,
+	halfmove:      int,
+}
+
+MoveList :: struct {
+	moves : [256]Move,
+	n : int,
 }
 
 knight_moves: [64]BitBoard
 king_moves: [64]BitBoard
+
+//Attack lookup tables are pure global state shared by the engine and every
+//test, so they are built once at startup
+@(init)
+init_attack_tables_startup :: proc "contextless" () {
+	context = runtime.default_context()
+	init_knight_moves()
+	init_king_moves()
+}
 
 init_knight_moves :: proc() {
 	pi: BitBoard
@@ -162,29 +178,22 @@ get_pawn_moves :: proc(
 	opp_pieces: BitBoard,
 	en_passant: int,
 ) -> (
-	moves_bb: BitBoard,
+	moves_bb:    BitBoard,
 	captures_bb: BitBoard,
-	ep_sq: int, // promotions_bb: BitBoard,
 ) {
-	rank, file := sq_to_rank_file(sq)
 	sq_bb := sq_to_bb(sq)
-
-	direction: int
-	pos_mov_bb: BitBoard
-	rank_end, file_end: int
-	move_one: bool
 
 	occupancy := my_pieces | opp_pieces
 
-	// Add the en passant square to the enemies bitboard for capture calculation
-	ep_sq_bb: BitBoard = sq_to_bb(en_passant)
-	enemy := opp_pieces | ep_sq_bb
+	// Add the en passant square to the enemies bitboard for capture calculation.
+	// Only do this when en passant is actually possible: when en_passant is -1
+	// the shift in sq_to_bb would be undefined
+	enemy := opp_pieces
+	if en_passant >= 0 {
+		enemy |= sq_to_bb(en_passant)
+	}
 
-	moves_bb = 0
-	captures_bb = 0
-
-
-	single_push, double_push, cap_left, cap_right: BitBoard = 0, 0, 0, 0
+	single_push, double_push, cap_left, cap_right: BitBoard
 	if color == .White {
 		single_push = (sq_bb << 8) & ~occupancy
 		double_push = ((single_push & RANK_3) << 8) & ~occupancy
@@ -197,25 +206,19 @@ get_pawn_moves :: proc(
 		cap_right = (sq_bb >> 7) & enemy & ~FILE_A
 	}
 
-	if double_push != 0 {
-		if color == .White {
-			ep_sq = sq + 8
-		} else {
-			ep_sq = sq - 8
-		}
-	} else do ep_sq = -1
-
 	moves_bb = single_push | double_push
 	captures_bb = cap_left | cap_right
 
-	return moves_bb, captures_bb, ep_sq
+	return moves_bb, captures_bb
 }
 
-gen_moves :: proc(position: ^GamePosition) -> ^queue.Queue(Move) {
+gen_moves :: proc(position: ^GamePosition) -> MoveList {
 	//This is better than the separate procedures because we only have to loop over a single bitboard
 	// moves: queue.Queue(Move)
-	moves := new(queue.Queue(Move))
-	queue.init(moves)
+	// moves := new(queue.Queue(Move))
+	// queue.init(moves)
+	move_list : MoveList
+	move_list.n = 0
 
 	pos_bb, moves_bb, captures_bb: BitBoard
 	piece: Piece
@@ -245,11 +248,13 @@ gen_moves :: proc(position: ^GamePosition) -> ^queue.Queue(Move) {
 	//to see if it is faster
 	for sq in 0 ..< 64 {
 		pos_bb = BitBoard(1) << uint(sq)
+		// Reset for every square: squares that match no case (empty squares
+		// or opponent pieces) must not re-emit the previous piece's moves
+		moves_bb = 0
+		captures_bb = 0
 		switch {
-		case (pos_bb & position.white.Pawns) != 0 && (color == .White):
-			// fmt.println("TEST")
-			ep_sq: int
-			moves_bb, captures_bb, ep_sq = get_pawn_moves(
+		case (pos_bb & my_pos.Pawns) != 0:
+			moves_bb, captures_bb = get_pawn_moves(
 				sq,
 				color,
 				my_pos.AllPieces,
@@ -261,7 +266,8 @@ gen_moves :: proc(position: ^GamePosition) -> ^queue.Queue(Move) {
 		case (pos_bb & my_pos.Knights) != 0:
 			piece = Piece{PieceType.Knight, color}
 			moves_bb = knight_moves[sq] & ~my_pos.AllPieces
-			captures_bb = knight_moves[sq] & opp_pos.AllPieces
+			captures_bb = moves_bb & opp_pos.AllPieces
+			moves_bb = moves_bb & ~captures_bb
 		case (pos_bb & my_pos.Rooks) != 0:
 			piece = Piece{PieceType.Rook, color}
 			moves_bb = get_rook_moves(sq, my_pos.AllPieces | opp_pos.AllPieces) & ~my_pos.AllPieces
@@ -282,15 +288,17 @@ gen_moves :: proc(position: ^GamePosition) -> ^queue.Queue(Move) {
 		case (pos_bb & my_pos.King) != 0:
 			piece = Piece{PieceType.King, color}
 			moves_bb = king_moves[sq] & ~my_pos.AllPieces
-			captures_bb = king_moves[sq] & opp_pos.AllPieces
+			captures_bb = moves_bb & opp_pos.AllPieces
+			moves_bb = moves_bb & ~captures_bb
 		}
-		bb_to_moves(moves, sq, piece, moves_bb, captures_bb)
+		// bb_to_moves(moves, sq, piece, moves_bb, captures_bb)
+		bb_to_moves(&move_list, sq, piece, moves_bb, captures_bb)
 	}
 
-	check_castle: bool = true
-	if check_castle do gen_castle_move(moves, color, my_pos, opp_pos)
+	// gen_castle_move(moves, position)
+	gen_castle_move(&move_list, position)
 
-	return moves
+	return move_list
 
 }
 
@@ -300,18 +308,66 @@ free_moves :: proc(moves: ^queue.Queue(Move)) {
 	free(moves)
 }
 
-gen_castle_move :: proc(
-	moves: ^queue.Queue(Move),
-	color: Color,
-	my_pos: ^PositionOneColor,
-	opp_pos: ^PositionOneColor,
-) {
-
-	//O-O
-	if color == .White {
-
+//Returns the castling rights that are lost when a move touches sq,
+//either as its origin or destination square
+castle_rights_mask :: proc(sq: int) -> bit_set[Castling] {
+	switch sq {
+	case idx_A1:
+		return {.WHITEQUEENSIDE}
+	case idx_E1:
+		return {.WHITEKINGSIDE, .WHITEQUEENSIDE}
+	case idx_H1:
+		return {.WHITEKINGSIDE}
+	case idx_A8:
+		return {.BLACKQUEENSIDE}
+	case idx_E8:
+		return {.BLACKKINGSIDE, .BLACKQUEENSIDE}
+	case idx_H8:
+		return {.BLACKKINGSIDE}
 	}
-	//O-O-O
+
+	return {}
+}
+
+gen_castle_move :: proc(move_list: ^MoveList, position: ^GamePosition) {
+	color := position.turn
+	opp_color := color == .White ? Color.Black : Color.White
+	king_sq := color == .White ? idx_E1 : idx_E8
+	rank_offset := color == .White ? 0 : 56
+
+	// Can't castle while in check
+	if is_square_attacked(king_sq, opp_color, position) do return
+
+	occupancy := position.white.AllPieces | position.black.AllPieces
+
+	// O-O: f and g files must be empty, and the king can't pass through or
+	// land on an attacked square
+	if (color == .White && .WHITEKINGSIDE in position.castling) ||
+	   (color == .Black && .BLACKKINGSIDE in position.castling) {
+		f_sq := rank_offset + 5
+		g_sq := rank_offset + 6
+		if (occupancy & (sq_to_bb(f_sq) | sq_to_bb(g_sq))) == 0 &&
+		   !is_square_attacked(f_sq, opp_color, position) &&
+		   !is_square_attacked(g_sq, opp_color, position) {
+			// queue.push_back(moves, Move{king_sq, g_sq, Piece{.King, color}, false, .Pawn})
+			add_move_to_list(move_list, Move{king_sq, g_sq, Piece{.King, color}, false, .Pawn})
+		}
+	}
+
+	// O-O-O: b, c and d files must be empty, and the king can't pass through
+	// d or land on c on an attacked square (b1 may be attacked)
+	if (color == .White && .WHITEQUEENSIDE in position.castling) ||
+	   (color == .Black && .BLACKQUEENSIDE in position.castling) {
+		b_sq := rank_offset + 1
+		c_sq := rank_offset + 2
+		d_sq := rank_offset + 3
+		if (occupancy & (sq_to_bb(b_sq) | sq_to_bb(c_sq) | sq_to_bb(d_sq))) == 0 &&
+		   !is_square_attacked(d_sq, opp_color, position) &&
+		   !is_square_attacked(c_sq, opp_color, position) {
+			// queue.push_back(moves, Move{king_sq, c_sq, Piece{.King, color}, false, .Pawn})
+			add_move_to_list(move_list, Move{king_sq, c_sq, Piece{.King, color}, false, .Pawn})
+		}
+	}
 }
 
 //Checks to see if the square sq is attacked by any pieces of by_color
@@ -372,38 +428,105 @@ is_in_check :: proc(color: Color, position: ^GamePosition) -> bool {
 	return is_square_attacked(int(king_sq), opp_color, position)
 }
 
+add_move_to_list :: proc(ml: ^MoveList, m: Move) {
+	ml.moves[ml.n] = m
+	ml.n += 1
+}
+
+// Move captures to the front of the list and return the number of captures
+partition_captures_first :: proc(ml: ^MoveList, m: Move) -> int {
+	ncap := 0
+	for i in 0..<ml.n {
+		// If it is a capture swap with earliest element in list that is
+		// not a capture
+		if ml.moves[i].is_capture {
+			ml.moves[ncap], ml.moves[i] = ml.moves[i], ml.moves[ncap]
+			ncap += 1
+		}
+	}
+
+	return ncap
+}
+
 bb_to_moves :: proc(
-	moves: ^queue.Queue(Move),
+	// moves: ^queue.Queue(Move),
+	move_list: ^MoveList,
 	sq: int,
 	piece: Piece,
 	moves_bb: BitBoard,
 	captures_bb: BitBoard,
 ) {
 
-	if piece == .Pawn {
-		bb_to_pawn_moves(moves, sq, moves_bb, captures_bb)
+	if piece.piecetype == .Pawn {
+		bb_to_pawn_moves(move_list, sq, piece, moves_bb, captures_bb)
 		return
 	}
 
 	bb_tmp: BitBoard
 	sq_fin: int
 	move: Move
-	flags: bit_set[0 ..< 4] = {}
 
 	bb_tmp = moves_bb
 	for bb_tmp != 0 {
 		sq_fin = pop_first_bit(&bb_tmp) // + 1
-		move = Move{sq, sq_fin, piece, false}
-		queue.push_back(moves, move)
+		move = Move{sq, sq_fin, piece, false, .Pawn}
+		add_move_to_list(move_list, move)
+		// queue.push_back(moves, move)
 	}
 
 	bb_tmp = captures_bb
 	for bb_tmp != 0 {
 		sq_fin = pop_first_bit(&bb_tmp) // + 1
-		move = Move{sq, sq_fin, piece, true}
-		queue.push_front(moves, move)
+		move = Move{sq, sq_fin, piece, true, .Pawn}
+		add_move_to_list(move_list, move)
 	}
 
+}
+
+//Convert pawn move/capture bitboards into Move structs. Promotion squares
+//expand into one move per promotion piece (Q, R, B, N)
+bb_to_pawn_moves :: proc(
+	move_list: ^MoveList,
+	sq: int,
+	piece: Piece,
+	moves_bb: BitBoard,
+	captures_bb: BitBoard,
+) {
+	bb_tmp: BitBoard
+	sq_fin: int
+
+	promotion_pieces := [4]PieceType{.Queen, .Rook, .Bishop, .Knight}
+
+	bb_tmp = moves_bb
+	for bb_tmp != 0 {
+		sq_fin = pop_first_bit(&bb_tmp)
+		if sq_fin < 8 || sq_fin >= 56 {
+			for promo in promotion_pieces {
+				move := Move{sq, sq_fin, piece, false, promo}
+				add_move_to_list(move_list, move)
+			}
+		} else {
+			// queue.push_back(moves, Move{sq, sq_fin, piece, false, .Pawn})
+			move := Move{sq, sq_fin, piece, false, .Pawn}
+			add_move_to_list(move_list, move)
+		}
+	}
+
+	bb_tmp = captures_bb
+	for bb_tmp != 0 {
+		sq_fin = pop_first_bit(&bb_tmp)
+		if sq_fin < 8 || sq_fin >= 56 {
+			for promo in promotion_pieces {
+				// queue.push_front(moves, Move{sq, sq_fin, piece, true, promo})
+				move := Move{sq, sq_fin, piece, true, promo}
+				add_move_to_list(move_list, move)
+			}
+		} else {
+			// queue.push_front(moves, Move{sq, sq_fin, piece, true, .Pawn})
+			move := Move{sq, sq_fin, piece, true, .Pawn}
+			add_move_to_list(move_list, move)
+		}
+	}
 }
 
 /*
@@ -444,18 +567,35 @@ apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
 		position.movenum += 1
 	}
 
-	// pos_final: uint = auto_cast move.pos_final
-	is_capture := (sq_bb_final & opp_pos.AllPieces) != 0
-	// is_capture := move.is_capture
+	// En passant is only valid on the move immediately after a double push
+	position.en_passant = -1
+
+	// En passant capture: a pawn moving diagonally to a square that is not
+	// occupied by an enemy piece
+	is_en_passant := false
+	if move.piece.piecetype == .Pawn && (sq_bb_final & opp_pos.AllPieces) == 0 {
+		_, file_init := sq_to_rank_file(move.pos_init)
+		_, file_final := sq_to_rank_file(move.pos_final)
+		is_en_passant = file_init != file_final
+	}
 
 	switch move.piece.piecetype {
 	case .Pawn:
 		position.halfmove = 0
 		my_pos.Pawns &~= sq_bb_init
-		// Only doing queen promotion right now. Check is final position for pawn in
-		// on the first or last rank
-		if move.pos_final < 8 || move.pos_final >= 56 {
-			my_pos.Queens |= sq_bb_final
+		if move.promotion != .Pawn {
+			#partial switch move.promotion {
+			case .Queen:
+				my_pos.Queens |= sq_bb_final
+			case .Rook:
+				my_pos.Rooks |= sq_bb_final
+			case .Bishop:
+				my_pos.Bishops |= sq_bb_final
+			case .Knight:
+				my_pos.Knights |= sq_bb_final
+			case:
+				panic("Invalid promotion piece in move")
+			}
 		} else {
 			my_pos.Pawns |= sq_bb_final
 			// Check for en passant square
@@ -466,8 +606,6 @@ apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
 				case .Black:
 					position.en_passant = move.pos_init - 8
 				}
-			} else {
-				position.en_passant = -1
 			}
 		}
 	case .Knight:
@@ -496,9 +634,36 @@ apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
 	my_pos.AllPieces &~= sq_bb_init
 	my_pos.AllPieces |= sq_bb_final
 
-	info.is_capture = move.is_capture
-	if move.is_capture {
+	// Castling: the king moving two files also moves the rook
+	if move.piece.piecetype == .King && abs(move.pos_final - move.pos_init) == 2 {
+		rook_from, rook_to: int
+		if move.pos_final > move.pos_init {
+			rook_from = move.pos_final + 1
+			rook_to = move.pos_final - 1
+		} else {
+			rook_from = move.pos_final - 2
+			rook_to = move.pos_final + 1
+		}
+		rook_from_bb := sq_to_bb(rook_from)
+		rook_to_bb := sq_to_bb(rook_to)
+		my_pos.Rooks &~= rook_from_bb
+		my_pos.Rooks |= rook_to_bb
+		my_pos.AllPieces &~= rook_from_bb
+		my_pos.AllPieces |= rook_to_bb
+	}
+
+	// Remove any captured piece
+	if is_en_passant {
 		position.halfmove = 0
+		ep_capture_bb := sq_to_bb(move.pos_final + (move.piece.color == .White ? -8 : 8))
+		opp_pos.Pawns &~= ep_capture_bb
+		opp_pos.AllPieces &~= ep_capture_bb
+		info.is_capture = true
+		info.is_en_passant = true
+		info.capture = {.Pawn, opp_color}
+	} else if (sq_bb_final & opp_pos.AllPieces) != 0 {
+		position.halfmove = 0
+		info.is_capture = true
 		if sq_bb_final & opp_pos.Pawns != 0 {
 			opp_pos.Pawns &~= sq_bb_final
 			info.capture = {.Pawn, opp_color}
@@ -518,6 +683,10 @@ apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
 		opp_pos.AllPieces &~= sq_bb_final
 	}
 
+	// Revoke castling rights for the squares touched by this move
+	position.castling -= castle_rights_mask(move.pos_init)
+	position.castling -= castle_rights_mask(move.pos_final)
+
 	return info
 }
 
@@ -535,18 +704,16 @@ undo_move_inplace :: proc(move: Move, info: MoveInfo, position: ^GamePosition) {
 	sq_bb_final: BitBoard = BitBoard(1) << uint(move.pos_final)
 
 	my_pos, opp_pos: ^PositionOneColor
-	opp_color: Color
 	switch move.piece.color {
 	case .White:
 		my_pos = &position.white
 		opp_pos = &position.black
-		opp_color = .Black
 		position.turn = .White
 	case .Black:
 		my_pos = &position.black
 		opp_pos = &position.white
-		opp_color = .White
 		position.turn = .Black
+		position.movenum -= 1
 	}
 
 	// Restore previous en_passant and castling values
@@ -556,7 +723,23 @@ undo_move_inplace :: proc(move: Move, info: MoveInfo, position: ^GamePosition) {
 
 	switch move.piece.piecetype {
 	case .Pawn:
-		my_pos.Pawns &~= sq_bb_final
+		if move.promotion != .Pawn {
+			#partial switch move.promotion {
+			// Remove the promoted piece, the pawn goes back to its origin square
+			case .Queen:
+				my_pos.Queens &~= sq_bb_final
+			case .Rook:
+				my_pos.Rooks &~= sq_bb_final
+			case .Bishop:
+				my_pos.Bishops &~= sq_bb_final
+			case .Knight:
+				my_pos.Knights &~= sq_bb_final
+			case:
+				panic("Invalid promotion piece in undo")
+			}
+		} else {
+			my_pos.Pawns &~= sq_bb_final
+		}
 		my_pos.Pawns |= sq_bb_init
 	case .Knight:
 		my_pos.Knights &~= sq_bb_final
@@ -579,7 +762,30 @@ undo_move_inplace :: proc(move: Move, info: MoveInfo, position: ^GamePosition) {
 	my_pos.AllPieces &~= sq_bb_final
 	my_pos.AllPieces |= sq_bb_init
 
-	if info.is_capture {
+	// Castling: move the rook back
+	if move.piece.piecetype == .King && abs(move.pos_final - move.pos_init) == 2 {
+		rook_from, rook_to: int
+		if move.pos_final > move.pos_init {
+			rook_from = move.pos_final + 1
+			rook_to = move.pos_final - 1
+		} else {
+			rook_from = move.pos_final - 2
+			rook_to = move.pos_final + 1
+		}
+		rook_from_bb := sq_to_bb(rook_from)
+		rook_to_bb := sq_to_bb(rook_to)
+		my_pos.Rooks &~= rook_to_bb
+		my_pos.Rooks |= rook_from_bb
+		my_pos.AllPieces &~= rook_to_bb
+		my_pos.AllPieces |= rook_from_bb
+	}
+
+	if info.is_en_passant {
+		// The captured pawn sits next to pos_final, not on it
+		ep_capture_bb := sq_to_bb(move.pos_final + (move.piece.color == .White ? -8 : 8))
+		opp_pos.Pawns |= ep_capture_bb
+		opp_pos.AllPieces |= ep_capture_bb
+	} else if info.is_capture {
 		switch info.capture.piecetype {
 		case .Pawn:
 			opp_pos.Pawns |= sq_bb_final
@@ -606,11 +812,13 @@ perft :: proc(depth: int, position: ^GamePosition) -> u64 {
 
 	nodes: u64 = 0
 
-	moves := gen_moves(position)
-	defer free_moves(moves)
+	move_list := gen_moves(position)
+	// defer free_moves(moves)
 
-	for queue.len(moves^) > 0 {
-		move := queue.pop_front(moves)
+	// for queue.len(moves^) > 0 {
+		// move := queue.pop_front(moves)
+	for i in 0..<move_list.n {
+		move := move_list.moves[i]
 		info := apply_move_inplace(move, position)
 
 		// if the move didn't leave our king in check, it is legal
@@ -627,14 +835,16 @@ perft_divide :: proc(depth: int, position: ^GamePosition) -> u64 {
 
 	total_nodes: u64 = 0
 	display_position(position^)
-	moves := gen_moves(position)
-	defer free(moves)
+	move_list := gen_moves(position)
+	// defer free_moves(moves)
 
-	fmt.println("NMoves:", queue.len(moves^))
+	fmt.println("NMoves:", move_list.n)
 
 	fmt.printf("\n--- Perft Divide Depth %d ---\n", depth)
-	for queue.len(moves^) > 0 {
-		move := queue.pop_front(moves)
+	for i in 0..<move_list.n {
+	// for queue.len(moves^) > 0 {
+		// move := queue.pop_front(moves)
+		move := move_list.moves[i]
 		info := apply_move_inplace(move, position)
 
 		if !is_in_check(move.piece.color, position) {

@@ -156,92 +156,22 @@ main :: proc() {
 
 	context.logger = log.create_console_logger()
 
-	pos: GamePosition
-	fen: string = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-	bb_tmp: BitBoard
-	bb_out, occ: BitBoard
-	mask: BitBoard
-	i: int
-	//pos = process_fen(fen)
-	//generate_magics()
 	init_knight_moves()
 	init_king_moves()
 	init_magic_bitboards()
 	defer free_magic_bitboards()
 
+	// Perft suite matching perft_test_numbers.txt and the standard CPW positions
+	pos := gen_newgame()
+	fmt.println("Startpos:")
+	fmt.println("  perft 1:", perft(1, &pos), "(expected 20)")
+	fmt.println("  perft 2:", perft(2, &pos), "(expected 400)")
+	fmt.println("  perft 3:", perft(3, &pos), "(expected 8902)")
 
-	occ = BitBoard(1) << 16
-	occ |= BitBoard(1) << 17
-	occ |= BitBoard(1) << 18
-	occ |= BitBoard(1) << 10
-	occ |= BitBoard(1) << 2
-
-	fmt.println("FFF:", bits.count_ones(u64(occ)))
-	/*
-    occ |= BitBoard(1) << 0
-
-    fmt.println("Occupancy")
-    display_bitboard(occ)
-
-    bb_tmp = get_rook_moves(0, occ)
-    fmt.println("Rook")
-    display_bitboard(bb_tmp)
-
-    bb_tmp = get_bishop_moves(0, occ)
-    fmt.println("Bishop")
-    display_bitboard(bb_tmp)
-
-    /*
-    bb_out = init_slider_move(1, occ, false)
-    display_bitboard(bb_out)
-    fmt.println("")
-    bb_out = init_slider_move(1, occ, true)
-    display_bitboard(bb_out)
-    */
-
-    
-    mask = rmask(0)
-    display_bitboard(mask)
-    mask = get_rook_mask(0)
-    display_bitboard(mask)
-    */
-	sq: int = 0
-
-	//mask = rmask(sq)
-	//display_bitboard(mask)
-	//mask = get_rook_mask(sq)
-	//display_bitboard(mask)
-
-	/*
-    n : int = magic_rook_shifts[sq]
-    bb_tmp = index_to_bb(sq, n, mask)
-    //tmp = batt(27)
-    /*
-    for i in 0..<100 {
-        bb_tmp = index_to_bb(i, 12, mask)
-        fmt.println("I = ", i)
-        display_bitboard(bb_tmp)
-    }
-    */
-    */
-	//generate_magics()
-
-	/*
-    bb_tmp = BitBoard(1) << 22 | BitBoard(1) << 10 | BitBoard(1) << 0
-    fmt.println("AAA", bb_tmp)
-    i = pop_first_bit(&bb_tmp)
-    fmt.println("BBB", i, bb_tmp)
-    i = pop_first_bit(&bb_tmp)
-    fmt.println("BBB", i, bb_tmp)
-    i = pop_first_bit(&bb_tmp)
-    fmt.println("BBB", i, bb_tmp)
-    */
-
-	pos = gen_newgame()
-
-	// display_position(pos)
-	// fmt.println(perft(1, &pos))
-	perft_divide(1, &pos)
-	// fmt.println(perft(2, &pos))
+	kiwipete := process_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1")
+	fmt.println("Kiwipete:")
+	fmt.println("  perft 1:", perft(1, &kiwipete), "(expected 48)")
+	fmt.println("  perft 2:", perft(2, &kiwipete), "(expected 2039)")
+	fmt.println("  perft 3:", perft(3, &kiwipete), "(expected 97862)")
 
 }

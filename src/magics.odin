@@ -4,6 +4,7 @@ import "core:container/queue"
 import "core:fmt"
 import "core:math/bits"
 import "core:math/rand"
+import "base:runtime"
 
 //Shifts are equal to the number of bits needed to describe
 //all the possible permutations for the occupancy. 
@@ -286,20 +287,38 @@ magic_table :: struct {
 magic_bishop_table: [64]magic_table
 magic_rook_table: [64]magic_table
 
+magic_tables_initialized: bool
+
 //Populate the global magic bitboard tables
 init_magic_bitboards :: proc() {
+	//The tables are built once at program start (see init_magic_tables_startup
+	//below). Later calls are no-ops so main and tests can safely call this
+	if magic_tables_initialized do return
 	for i in 0 ..< 64 {
 		init_bishop_magic(i)
 		init_rook_magic(i)
 	}
+	magic_tables_initialized = true
 }
 
 //Free all magic bitboard tables
 free_magic_bitboards :: proc() {
+	if !magic_tables_initialized do return
 	for i in 0 ..< 64 {
 		delete(magic_bishop_table[i].attacks)
 		delete(magic_rook_table[i].attacks)
 	}
+	magic_tables_initialized = false
+}
+
+//The magic tables are global and used by every part of the engine and by any
+//test that runs move generation, so they are built exactly once at startup.
+//The test runner executes tests on multiple threads, so per-test init/free of
+//these tables would race
+@(init)
+init_magic_tables_startup :: proc "contextless" () {
+	context = runtime.default_context()
+	init_magic_bitboards()
 }
 
 //Should be same as rmask and bmask (though input differs by 1, i.e. this code starts at sq=1, while

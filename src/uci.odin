@@ -201,6 +201,7 @@ determine_piece :: proc(pos: PositionOneColor, sq_bb: BitBoard) -> PieceType {
 	// fmt.println("Error in determining piece")
 	return .Pawn
 }
+
 process_uci_move :: proc(pos: GamePosition, move_str: string) -> Move {
 	pos_init := move_str[:2]
 	pos_final := move_str[2:]
@@ -232,7 +233,7 @@ process_uci_move :: proc(pos: GamePosition, move_str: string) -> Move {
 
 	piece_tmp := Piece{piece_type, check_color}
 
-	move_out := Move{pos_init_int, pos_final_int, piece_tmp, is_capture}
+	move_out := Move{pos_init_int, pos_final_int, piece_tmp, is_capture, .Pawn}
 
 	return move_out
 }

@@ -2,45 +2,19 @@ package main
 
 import "core:container/queue"
 
-alpha_beta_max :: proc(alpha: int, beta: int, depthleft: int, pos: ^GamePosition) -> int {
-	//moves : ^queue.Queue(Move) = gen_moves(pos)
-	moves := gen_moves(pos)
+nega_max :: proc(depth: int, pos: ^GamePosition) -> int {
+	if depth == 0 do return eval_position(pos)
 
-	move: Move
-	score: int
-	alpha_out := alpha
+	max := -1000000
 
-	if depthleft == 0 do return eval_position(pos)
+	all_moves := gen_moves(pos)
 
-	for queue.len(moves^) > 0 {
-		move = queue.pop_front(moves)
-		move_info := apply_move_inplace(move, pos)
-		score = alpha_beta_min(alpha, beta, depthleft - 1, pos)
-		undo_move_inplace(move, move_info, pos)
-		if score >= beta do return beta
-		if score > alpha_out do alpha_out = score
+	for i in 0..<all_moves.n {
+		move := all_moves.moves[i]
+		mi := apply_move_inplace(move, pos)
+		score := -nega_max(depth-1, pos)
+		undo_move_inplace(move, mi, pos)
+		if score > max do max = score
 	}
-
-	return alpha_out
-}
-
-alpha_beta_min :: proc(alpha: int, beta: int, depthleft: int, pos: ^GamePosition) -> int {
-	//moves: ^queue.Queue(Move) = gen_moves(pos)
-	moves := gen_moves(pos)
-	move: Move
-	score: int
-	beta_out := beta
-
-	if depthleft == 0 do return -eval_position(pos)
-
-	for queue.len(moves^) > 0 {
-		move = queue.pop_front(moves)
-		info := apply_move_inplace(move, pos)
-		score = alpha_beta_min(alpha, beta, depthleft - 1, pos)
-		undo_move_inplace(move, info, pos)
-		if score <= alpha do return alpha
-		if score < beta_out do beta_out = score
-	}
-
-	return beta_out
+	return max
 }

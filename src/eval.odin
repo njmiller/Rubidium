@@ -122,6 +122,9 @@ eval_position :: proc(pos: ^GamePosition) -> int {
 	score := 0
 	score_tmp: int
 
+	// who2move val
+	who2move := 1 if pos.turn == .White else -1
+
 	//Queen
 	n_wqueen := 0
 	bb_tmp = pos.white.Queens
@@ -158,7 +161,7 @@ eval_position :: proc(pos: ^GamePosition) -> int {
 
 	bb_tmp = pos.black.Rooks
 	for (bb_tmp != 0) {
-		n_bpieces = 0
+		n_bpieces += 1
 		sq := pop_first_bit(&bb_tmp)
 		sq = mirror_sq(sq)
 		score -= ROOK_CP
@@ -236,5 +239,5 @@ eval_position :: proc(pos: ^GamePosition) -> int {
 	sq2 = mirror_sq(sq)
 	score -= king_square_table[sq]
 
-	return score
+	return who2move*score
 }

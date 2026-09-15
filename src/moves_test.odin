@@ -1,5 +1,6 @@
 package main
 
+import "core:container/queue"
 import "core:fmt"
 import "core:testing"
 
@@ -23,9 +24,6 @@ test_knight_moves :: proc(_: ^testing.T) {
 
 @(test)
 test_magic_moves :: proc(t: ^testing.T) {
-	init_magic_bitboards()
-	defer free_magic_bitboards()
-
 	test_bishop_moves(t)
 	test_rook_moves(t)
 
@@ -106,7 +104,7 @@ test_apply_move :: proc(_: ^testing.T) {
 	pos := process_fen(fen)
 
 	piece := Piece{.Pawn, .White}
-	move := Move{idx_E2, idx_E4, piece, false}
+	move := Move{idx_E2, idx_E4, piece, false, .Pawn}
 
 	pos_init := pos
 
@@ -147,4 +145,83 @@ test_process_fen :: proc(_: ^testing.T) {
 	assert(pos.movenum == 10)
 
 
+}
+
+@(test)
+test_en_passant :: proc(_: ^testing.T) {
+	// Black pawn on d4 can capture en passant on e3
+	fen := "rnbqkbnr/ppp1pppp/8/8/3pP3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
+	pos := process_fen(fen)
+	pos_init := pos
+
+	move := Move{idx_D4, idx_E3, Piece{.Pawn, .Black}, true, .Pawn}
+	info := apply_move_inplace(move, &pos)
+
+	assert((pos.black.Pawns & E3) != 0)
+	assert((pos.white.Pawns & E4) == 0)
+	assert((pos.white.AllPieces & E4) == 0)
+
+	undo_move_inplace(move, info, &pos)
+
+	assert(pos == pos_init)
+}
+
+@(test)
+test_promotion :: proc(_: ^testing.T) {
+	// White pawn on a7 promotes to a queen by pushing to a8
+	fen := "8/P7/8/8/8/8/7k/K7 w - - 0 1"
+	pos := process_fen(fen)
+
+	move := Move{idx_A7, idx_A8, Piece{.Pawn, .White}, false, .Queen}
+	info := apply_move_inplace(move, &pos)
+
+	assert((pos.white.Queens & A8) != 0)
+	assert((pos.white.Pawns & A8) == 0)
+	assert((pos.white.Pawns & A7) == 0)
+
+	undo_move_inplace(move, info, &pos)
+
+	assert((pos.white.Pawns & A7) != 0)
+	assert(pos.white.Queens == 0)
+}
+
+@(test)
+test_castle_gen :: proc(_: ^testing.T) {
+	fen := "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1"
+	pos := process_fen(fen)
+
+	move_list := gen_moves(&pos)
+	// defer free_moves(moves)
+
+	found_kingside, found_queenside := false, false
+	// for queue.len(moves^) > 0 {
+		// move := queue.pop_front(moves)
+	for i in 0..<move_list.n {
+		move := move_list.moves[i]
+		if move.piece.piecetype == .King {
+			if move.pos_final == idx_G1 do found_kingside = true
+			if move.pos_final == idx_C1 do found_queenside = true
+		}
+	}
+
+	assert(found_kingside)
+	assert(found_queenside)
+}
+
+@(test)
+test_perft_startpos :: proc(_: ^testing.T) {
+	pos := gen_newgame()
+
+	assert(perft(1, &pos) == 20)
+	assert(perft(2, &pos) == 400)
+	assert(perft(3, &pos) == 8902)
+}
+
+@(test)
+test_perft_kiwipete :: proc(_: ^testing.T) {
+	pos := process_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1")
+
+	assert(perft(1, &pos) == 48)
+	assert(perft(2, &pos) == 2039)
+	assert(perft(3, &pos) == 97862)
 }
