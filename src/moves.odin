@@ -1,6 +1,5 @@
 package main
 
-import "core:container/queue"
 import "core:fmt"
 import "core:math/bits"
 import "base:runtime"
@@ -20,7 +19,6 @@ MoveInfo :: struct {
 	is_capture:    bool,
 	is_en_passant: bool,
 	capture:       Piece,
-	// castle:     bit_set[0 ..< 4],
 	castling:      bit_set[Castling],
 	en_passant:    int,
 	halfmove:      int,
@@ -29,6 +27,16 @@ MoveInfo :: struct {
 MoveList :: struct {
 	moves : [256]Move,
 	n : int,
+}
+
+PerftStats :: struct {
+	nodes:      u64,
+	captures:   u64,
+	en_passant: u64,
+	castles:    u64,
+	promotions: u64,
+	checks:     u64,
+	checkmates: u64,
 }
 
 knight_moves: [64]BitBoard
@@ -300,12 +308,6 @@ gen_moves :: proc(position: ^GamePosition) -> MoveList {
 
 	return move_list
 
-}
-
-//Free a moves queue
-free_moves :: proc(moves: ^queue.Queue(Move)) {
-	queue.destroy(moves)
-	free(moves)
 }
 
 //Returns the castling rights that are lost when a move touches sq,
@@ -650,12 +652,20 @@ apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
 		my_pos.Rooks |= rook_to_bb
 		my_pos.AllPieces &~= rook_from_bb
 		my_pos.AllPieces |= rook_to_bb
+	
+		// Update piece location evaluation for rook
+		piece_rook : Piece = {.Rook, move.piece.color}
+		position.psqt_mid[move.piece.color] -= psqt_value_mid(piece_rook, rook_from)
+		position.psqt_mid[move.piece.color] += psqt_value_mid(piece_rook, rook_to)
+		position.psqt_end[move.piece.color] -= psqt_value_end(piece_rook, rook_from)
+		position.psqt_end[move.piece.color] += psqt_value_end(piece_rook, rook_to)
 	}
 
 	// Remove any captured piece
 	if is_en_passant {
 		position.halfmove = 0
-		ep_capture_bb := sq_to_bb(move.pos_final + (move.piece.color == .White ? -8 : 8))
+		// ep_capture_bb := sq_to_bb(move.pos_final + (move.piece.color == .White ? -8 : 8))
+		ep_capture_bb := sq_to_bb(ep_captured_square(move))
 		opp_pos.Pawns &~= ep_capture_bb
 		opp_pos.AllPieces &~= ep_capture_bb
 		info.is_capture = true
@@ -687,6 +697,31 @@ apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
 	position.castling -= castle_rights_mask(move.pos_init)
 	position.castling -= castle_rights_mask(move.pos_final)
 
+	// Update material information and piece square table info due to move
+	// Castling update done in castling move code as it requires calculation of rook_from/rook_to
+	if info.is_capture {
+		captured_type := info.capture.piecetype
+		position.material[opp_color] -= PIECE_VALUE[captured_type]
+		position.phase -= PHASE_WEIGHT[captured_type]
+		
+		sq := info.is_en_passant ? ep_captured_square(move) : move.pos_final
+		position.psqt_mid[opp_color] -= psqt_value_mid(info.capture, sq)
+		position.psqt_end[opp_color] -= psqt_value_end(info.capture, sq)
+	}
+
+	if move.promotion != .Pawn {
+		position.phase += PHASE_WEIGHT[move.promotion]
+		prom_piece : Piece = {move.promotion, move.piece.color}
+		position.psqt_mid[move.piece.color] += psqt_value_mid(prom_piece, move.pos_final)
+		position.psqt_end[move.piece.color] += psqt_value_end(prom_piece, move.pos_final)
+	}
+		
+	// Update location information for move
+	position.psqt_mid[move.piece.color] -= psqt_value_mid(move.piece, move.pos_init)
+	position.psqt_mid[move.piece.color] += psqt_value_mid(move.piece, move.pos_final)
+	position.psqt_end[move.piece.color] -= psqt_value_end(move.piece, move.pos_init)
+	position.psqt_end[move.piece.color] += psqt_value_end(move.piece, move.pos_final)
+
 	return info
 }
 
@@ -698,22 +733,29 @@ undo_move :: proc(move: Move, info: MoveInfo, position: GamePosition) -> GamePos
 }
 */
 
+ep_captured_square :: #force_inline proc(move: Move) -> int {
+	return move.pos_final + (move.piece.color == .White ? -8 : 8)
+}
+
 undo_move_inplace :: proc(move: Move, info: MoveInfo, position: ^GamePosition) {
 
 	sq_bb_init: BitBoard = BitBoard(1) << uint(move.pos_init)
 	sq_bb_final: BitBoard = BitBoard(1) << uint(move.pos_final)
 
 	my_pos, opp_pos: ^PositionOneColor
+	opp_color: Color
 	switch move.piece.color {
 	case .White:
 		my_pos = &position.white
 		opp_pos = &position.black
 		position.turn = .White
+		opp_color = .Black
 	case .Black:
 		my_pos = &position.black
 		opp_pos = &position.white
 		position.turn = .Black
 		position.movenum -= 1
+		opp_color = .White
 	}
 
 	// Restore previous en_passant and castling values
@@ -778,6 +820,13 @@ undo_move_inplace :: proc(move: Move, info: MoveInfo, position: ^GamePosition) {
 		my_pos.Rooks |= rook_from_bb
 		my_pos.AllPieces &~= rook_to_bb
 		my_pos.AllPieces |= rook_from_bb
+		
+		// Update piece location evaluation for rook
+		piece_rook : Piece = {.Rook, move.piece.color}
+		position.psqt_mid[move.piece.color] += psqt_value_mid(piece_rook, rook_from)
+		position.psqt_mid[move.piece.color] -= psqt_value_mid(piece_rook, rook_to)
+		position.psqt_end[move.piece.color] += psqt_value_end(piece_rook, rook_from)
+		position.psqt_end[move.piece.color] -= psqt_value_end(piece_rook, rook_to)
 	}
 
 	if info.is_en_passant {
@@ -805,29 +854,64 @@ undo_move_inplace :: proc(move: Move, info: MoveInfo, position: ^GamePosition) {
 		opp_pos.AllPieces |= sq_bb_final
 	}
 
+	// Update material and position evaluation
+	if info.is_capture {
+		captured_type := info.capture.piecetype
+		position.material[opp_color] += PIECE_VALUE[captured_type]
+		position.phase += PHASE_WEIGHT[captured_type]
+		
+		sq := info.is_en_passant ? ep_captured_square(move) : move.pos_final
+		position.psqt_mid[opp_color] += psqt_value_mid(info.capture, sq)
+		position.psqt_end[opp_color] += psqt_value_end(info.capture, sq)
+	}
+	
+	if move.promotion != .Pawn {
+		position.phase -= PHASE_WEIGHT[move.promotion]
+		prom_piece : Piece = {move.promotion, move.piece.color}
+		position.psqt_mid[move.piece.color] -= psqt_value_mid(prom_piece, move.pos_final)
+		position.psqt_end[move.piece.color] -= psqt_value_end(prom_piece, move.pos_final)
+	}
+	
+	// Update location information for move
+	position.psqt_mid[move.piece.color] += psqt_value_mid(move.piece, move.pos_init)
+	position.psqt_mid[move.piece.color] -= psqt_value_mid(move.piece, move.pos_final)
+	position.psqt_end[move.piece.color] += psqt_value_end(move.piece, move.pos_init)
+	position.psqt_end[move.piece.color] -= psqt_value_end(move.piece, move.pos_final)
+
 }
 
-perft :: proc(depth: int, position: ^GamePosition) -> u64 {
-	if depth == 0 do return 1
+perft :: proc(depth: int, position: ^GamePosition, stats: ^PerftStats) {
+	// if depth == 0 do return 1
+	if depth == 0 {
+		stats.nodes += 1
+		return
+	}
 
 	nodes: u64 = 0
 
 	move_list := gen_moves(position)
-	// defer free_moves(moves)
 
-	// for queue.len(moves^) > 0 {
-		// move := queue.pop_front(moves)
 	for i in 0..<move_list.n {
 		move := move_list.moves[i]
 		info := apply_move_inplace(move, position)
 
 		// if the move didn't leave our king in check, it is legal
-		if !is_in_check(move.piece.color, position) do nodes += perft(depth - 1, position)
+		// if !is_in_check(move.piece.color, position) do nodes += perft(depth - 1, position)
+
+		if !is_in_check(move.piece.color, position) {
+			if depth == 1 {
+				// Only tally leaf-move properties
+				if move.is_capture do stats.captures += 1
+				if info.is_en_passant do stats.en_passant += 1
+				if move.promotion != .Pawn do stats.promotions += 1
+			}
+			perft(depth - 1, position, stats)
+		}
 
 		undo_move_inplace(move, info, position)
 	}
 
-	return nodes
+	return
 }
 
 perft_divide :: proc(depth: int, position: ^GamePosition) -> u64 {
@@ -836,20 +920,18 @@ perft_divide :: proc(depth: int, position: ^GamePosition) -> u64 {
 	total_nodes: u64 = 0
 	display_position(position^)
 	move_list := gen_moves(position)
-	// defer free_moves(moves)
 
 	fmt.println("NMoves:", move_list.n)
 
 	fmt.printf("\n--- Perft Divide Depth %d ---\n", depth)
 	for i in 0..<move_list.n {
-	// for queue.len(moves^) > 0 {
-		// move := queue.pop_front(moves)
 		move := move_list.moves[i]
 		info := apply_move_inplace(move, position)
 
 		if !is_in_check(move.piece.color, position) {
-			nodes := perft(depth - 1, position)
-			total_nodes += nodes
+			stats : PerftStats
+			perft(depth - 1, position, &stats)
+			total_nodes += stats.nodes
 
 			// Print move in UCI format (e.g. e2e4)
 			init_file := 'a' + u8(move.pos_init % 8)
@@ -858,7 +940,7 @@ perft_divide :: proc(depth: int, position: ^GamePosition) -> u64 {
 			final_file := 'a' + u8(move.pos_final % 8)
 			final_rank := '1' + u8(move.pos_final / 8)
 
-			fmt.printf("%c%c%c%c: %d ", init_file, init_rank, final_file, final_rank, nodes)
+			fmt.printf("%c%c%c%c: %d ", init_file, init_rank, final_file, final_rank, stats.nodes)
 			fmt.println(move.piece.color, move.piece.piecetype)
 		}
 

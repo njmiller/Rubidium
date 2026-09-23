@@ -9,6 +9,30 @@ BISHOP_CP :: 330
 KNIGHT_CP :: 320
 PAWN_CP :: 100
 
+MAX_PHASE :: 24
+
+PHASE_WEIGHT := [PieceType]int {
+	.Pawn = 0,
+	.Knight = 1,
+	.Bishop = 1,
+	.Rook = 2,
+	.Queen = 4,
+	.King = 0,
+	.All = 0,
+}
+
+PIECE_VALUE := [PieceType]int {
+	.Pawn = 100,
+	.Knight = 320,
+	.Bishop = 330,
+	.Rook = 500,
+	.Queen = 900,
+	.King = 0, // never used but meeded for the arrau
+	.All = 0, // same as previous
+}
+
+DIST_BONUS : [64][64]int
+
 //odinfmt: disable
 pawn_square_table := [64]int{
     0,  0,  0,  0,  0,  0,  0,  0,
@@ -88,10 +112,41 @@ king_square_end := [64]int{
 }
 //odinfmt: enable
 
+PIECE_SQ_TABLE_MID := [PieceType][64]int {
+	.Pawn = pawn_square_table,
+	.Knight = knight_square_table,
+	.Bishop = bishop_square_table,
+	.Rook = rook_square_table,
+	.Queen = queen_square_table,
+	.King = king_square_mid,
+	.All = {}, // unused
+}
+
+PIECE_SQ_TABLE_END := [PieceType][64]int {
+	.Pawn = pawn_square_table,
+	.Knight = knight_square_table,
+	.Bishop = bishop_square_table,
+	.Rook = rook_square_table,
+	.Queen = queen_square_table,
+	.King = king_square_end,
+	.All = {}, // unused
+}
+
 num_pieces :: proc(bb: BitBoard) -> int {
 	return count_ones_bb(bb)
 }
 
+set_dist :: proc() {
+	for i in 0..<64 {
+		for j in 0..<64 {
+			rank_i, file_i := sq_to_rank_file(i)
+			rank_j, file_j := sq_to_rank_file(j)
+			DIST_BONUS[i][j] = 14 - ( abs(file_i - file_j) + abs(rank_i - rank_j) )
+		}
+	}
+}
+
+/*
 score_update :: #force_inline proc(
 	bb: BitBoard,
 	score_piece: int,
@@ -240,4 +295,31 @@ eval_position :: proc(pos: ^GamePosition) -> int {
 	score -= king_square_table[sq]
 
 	return who2move*score
+}
+*/
+
+eval_position :: proc(pos: ^GamePosition) -> int {
+	mid_score := (pos.material[.White] + pos.psqt_mid[.White]) - (pos.material[.Black] + pos.psqt_mid[.Black])
+	end_score := (pos.material[.White] + pos.psqt_end[.White]) - (pos.material[.Black] + pos.psqt_end[.Black])
+
+	phase := clamp(pos.phase, 0, MAX_PHASE)
+
+	// weighted average with full mid weight at MAX_PHASE and full end weight at phase=0
+	score := (mid_score * phase + end_score * (MAX_PHASE - phase)) / MAX_PHASE
+
+	// score = score if pos.turn == .White else -score
+	// return score
+	return pos.turn == .White ? score : -score
+}
+
+psqt_square :: #force_inline proc(square: int, color: Color) -> int {
+	return color == .White ? square : square ~ 56 // flip rank, keep file
+}
+
+psqt_value_mid :: #force_inline proc(piece: Piece, square: int) -> int {
+	return PIECE_SQ_TABLE_MID[piece.piecetype][psqt_square(square, piece.color)]
+}
+
+psqt_value_end :: #force_inline proc(piece: Piece, square: int) -> int {
+	return PIECE_SQ_TABLE_END[piece.piecetype][psqt_square(square, piece.color)]
 }

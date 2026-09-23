@@ -175,6 +175,12 @@ GamePosition :: struct {
 	turn:       Color,
 	halfmove:   int,
 	movenum:    int,
+
+	// Fields for evaluation that update on move/unmove
+	material:   [Color]int, // sum of piece values per side
+	psqt_mid:   [Color]int, // piece-square tables
+	psqt_end:   [Color]int, // endgame piece-square table
+	phase:      int,        // 0 = endgame, MAX_PHASE = midgame
 }
 
 Castling :: enum {

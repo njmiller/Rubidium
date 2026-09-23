@@ -2,8 +2,8 @@ package main
 
 import "core:fmt"
 import "core:log"
-import "core:math/bits"
-import "core:strconv"
+import "core:flags"
+import "core:os"
 
 process_fen :: proc(fen: string) -> GamePosition {
 	pos_out: GamePosition
@@ -18,33 +18,77 @@ process_fen :: proc(fen: string) -> GamePosition {
 	row = 8
 	for {
 		shift = 8 * (row - 1) + (col - 1)
+
+		rank : int = auto_cast row - 1
+		file : int = auto_cast col - 1
+		rank_bl := 7 - rank
+
+		sq := rank_file_to_sq(rank, file)
+		sq_bl := rank_file_to_sq(rank_bl, file) 
+
 		bb_tmp = BitBoard(1) << shift
 
 		switch fen[idx] {
 		case 'r':
 			pos_out.black.Rooks = pos_out.black.Rooks | bb_tmp
+			pos_out.material[.Black] += PIECE_VALUE[.Rook]
+			pos_out.psqt_mid[.Black] += rook_square_table[sq_bl]
+			pos_out.psqt_end[.Black] += rook_square_table[sq_bl]
 		case 'p':
 			pos_out.black.Pawns = pos_out.black.Pawns | bb_tmp
+			pos_out.material[.Black] += PIECE_VALUE[.Pawn]
+			pos_out.psqt_mid[.Black] += pawn_square_table[sq_bl]
+			pos_out.psqt_end[.Black] += pawn_square_table[sq_bl]
 		case 'n':
 			pos_out.black.Knights = pos_out.black.Knights | bb_tmp
+			pos_out.material[.Black] += PIECE_VALUE[.Knight]
+			pos_out.psqt_mid[.Black] += knight_square_table[sq_bl]
+			pos_out.psqt_end[.Black] += knight_square_table[sq_bl]
 		case 'b':
 			pos_out.black.Bishops = pos_out.black.Bishops | bb_tmp
+			pos_out.material[.Black] += PIECE_VALUE[.Bishop]
+			pos_out.psqt_mid[.Black] += bishop_square_table[sq_bl]
+			pos_out.psqt_end[.Black] += bishop_square_table[sq_bl]
 		case 'q':
 			pos_out.black.Queens = pos_out.black.Queens | bb_tmp
+			pos_out.material[.Black] += PIECE_VALUE[.Queen]
+			pos_out.psqt_mid[.Black] += queen_square_table[sq_bl]
+			pos_out.psqt_end[.Black] += queen_square_table[sq_bl]
 		case 'k':
 			pos_out.black.King = pos_out.black.King | bb_tmp
+			pos_out.material[.Black] += PIECE_VALUE[.King]
+			pos_out.psqt_mid[.Black] += king_square_mid[sq_bl]
+			pos_out.psqt_end[.Black] += king_square_end[sq_bl]
 		case 'R':
 			pos_out.white.Rooks = pos_out.white.Rooks | bb_tmp
+			pos_out.material[.White] += PIECE_VALUE[.Rook]
+			pos_out.psqt_mid[.White] += rook_square_table[sq]
+			pos_out.psqt_end[.White] += rook_square_table[sq]
 		case 'P':
 			pos_out.white.Pawns = pos_out.white.Pawns | bb_tmp
+			pos_out.material[.White] += PIECE_VALUE[.Pawn]
+			pos_out.psqt_mid[.White] += pawn_square_table[sq]
+			pos_out.psqt_end[.White] += pawn_square_table[sq]
 		case 'N':
 			pos_out.white.Knights = pos_out.white.Knights | bb_tmp
+			pos_out.material[.White] += PIECE_VALUE[.Knight]
+			pos_out.psqt_mid[.White] += knight_square_table[sq]
+			pos_out.psqt_end[.White] += knight_square_table[sq]
 		case 'B':
 			pos_out.white.Bishops = pos_out.white.Bishops | bb_tmp
+			pos_out.material[.White] += PIECE_VALUE[.Bishop]
+			pos_out.psqt_mid[.White] += bishop_square_table[sq]
+			pos_out.psqt_end[.White] += bishop_square_table[sq]
 		case 'Q':
 			pos_out.white.Queens = pos_out.white.Queens | bb_tmp
+			pos_out.material[.White] += PIECE_VALUE[.Queen]
+			pos_out.psqt_mid[.White] += queen_square_table[sq]
+			pos_out.psqt_end[.White] += queen_square_table[sq]
 		case 'K':
 			pos_out.white.King = pos_out.white.King | bb_tmp
+			pos_out.material[.White] += PIECE_VALUE[.King]
+			pos_out.psqt_mid[.White] += king_square_mid[sq]
+			pos_out.psqt_end[.White] += king_square_end[sq]
 		case '1' ..= '8':
 			col += uint(fen[idx] - 48) - 1
 		case '/':
@@ -152,26 +196,33 @@ process_fen :: proc(fen: string) -> GamePosition {
 	return pos_out
 }
 
+run_perft :: proc(fen: string, depth: int) {
+	pos := process_fen(fen)
+
+	perft_divide(depth, &pos)
+}
+
+main_uci :: proc() {
+	return
+}
+
 main :: proc() {
+	if len(os.args) < 2 {
+		main_uci()
+		os.exit(0)
+	}
 
-	context.logger = log.create_console_logger()
-
-	init_knight_moves()
-	init_king_moves()
-	init_magic_bitboards()
-	defer free_magic_bitboards()
-
-	// Perft suite matching perft_test_numbers.txt and the standard CPW positions
-	pos := gen_newgame()
-	fmt.println("Startpos:")
-	fmt.println("  perft 1:", perft(1, &pos), "(expected 20)")
-	fmt.println("  perft 2:", perft(2, &pos), "(expected 400)")
-	fmt.println("  perft 3:", perft(3, &pos), "(expected 8902)")
-
-	kiwipete := process_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1")
-	fmt.println("Kiwipete:")
-	fmt.println("  perft 1:", perft(1, &kiwipete), "(expected 48)")
-	fmt.println("  perft 2:", perft(2, &kiwipete), "(expected 2039)")
-	fmt.println("  perft 3:", perft(3, &kiwipete), "(expected 97862)")
-
+	switch os.args[1] {
+		case "perft":
+			Perft_Options :: struct {
+				fen:   string `args:"pos=0,required" usage:"FEN string (quote it)."`,
+				depth: int    `args:"pos=1,required" usage:"Search depth"`,
+			}
+			opts: Perft_Options
+			flags.parse_or_exit(&opts, os.args[1:], .Unix)
+			run_perft(opts.fen, opts.depth)
+		case:
+			fmt.println("Bad option")
+			os.exit(1)
+	}
 }

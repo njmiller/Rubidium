@@ -1,7 +1,5 @@
 package main
 
-import "core:container/queue"
-import "core:fmt"
 import "core:testing"
 
 @(test)
@@ -31,9 +29,6 @@ test_magic_moves :: proc(t: ^testing.T) {
 
 // @(test)
 test_bishop_moves :: proc(_: ^testing.T) {
-	// init_magic_bitboards()
-	// defer free_magic_bitboards()
-
 	// Define an occupancy that will be used for testing
 	// bishop moves
 	occupancy := G5 | G3 | D5 | C6
@@ -82,9 +77,6 @@ test_bishop_moves :: proc(_: ^testing.T) {
 
 // @(test)
 test_rook_moves :: proc(_: ^testing.T) {
-	// init_magic_bitboards()
-	// defer free_magic_bitboards()
-
 	occupancy := G5 | G3 | D2 | F4
 
 	moves_G2 := get_rook_moves(idx_G2, occupancy)
@@ -191,11 +183,8 @@ test_castle_gen :: proc(_: ^testing.T) {
 	pos := process_fen(fen)
 
 	move_list := gen_moves(&pos)
-	// defer free_moves(moves)
 
 	found_kingside, found_queenside := false, false
-	// for queue.len(moves^) > 0 {
-		// move := queue.pop_front(moves)
 	for i in 0..<move_list.n {
 		move := move_list.moves[i]
 		if move.piece.piecetype == .King {
@@ -208,20 +197,70 @@ test_castle_gen :: proc(_: ^testing.T) {
 	assert(found_queenside)
 }
 
-@(test)
-test_perft_startpos :: proc(_: ^testing.T) {
-	pos := gen_newgame()
-
-	assert(perft(1, &pos) == 20)
-	assert(perft(2, &pos) == 400)
-	assert(perft(3, &pos) == 8902)
+expect_perft :: proc(t: ^testing.T, pos: ^GamePosition, depth: int, expected: u64, captures: int) {
+	stats: PerftStats
+	perft(depth, pos, &stats)
+	testing.expectf(t, stats.nodes == expected,
+		"perft(%d) = %d, expected %d", depth, stats.nodes, expected)
+	if captures >= 0 {
+		testing.expectf(t, stats.captures == auto_cast captures,
+		"perft captures(%d) = %d, expected %d", depth, stats.captures, captures)
+	}
 }
 
 @(test)
-test_perft_kiwipete :: proc(_: ^testing.T) {
+test_perft_startpos :: proc(t: ^testing.T) {
+	pos := gen_newgame()
+
+	expect_perft(t, &pos, 1, 20, 0)
+	expect_perft(t, &pos, 2, 400, 0)
+	expect_perft(t, &pos, 3, 8902, 34)
+	expect_perft(t, &pos, 4, 197281, 1576)
+	expect_perft(t, &pos, 5, 4865609, 82719)
+}
+
+@(test)
+test_perft_kiwipete :: proc(t: ^testing.T) {
 	pos := process_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1")
 
-	assert(perft(1, &pos) == 48)
-	assert(perft(2, &pos) == 2039)
-	assert(perft(3, &pos) == 97862)
+	expect_perft(t, &pos, 1, 48, 8)
+	expect_perft(t, &pos, 2, 2039, 351)
+	expect_perft(t, &pos, 3, 97862, 17102)
+	expect_perft(t, &pos, 4, 4085603, 757163)
+}
+
+@(test)
+test_perft_cpw_pos3 :: proc(t: ^testing.T) {
+	pos := process_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1 ")
+
+	expect_perft(t, &pos, 1, 14, 1)
+	expect_perft(t, &pos, 2, 191, 14)
+	expect_perft(t, &pos, 3, 2812, 209)
+}
+
+@(test)
+test_perft_cpw_pos4 :: proc(t: ^testing.T) {
+	pos := process_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1")
+
+	expect_perft(t, &pos, 1, 6, 0)
+	expect_perft(t, &pos, 2, 264, 87)
+	expect_perft(t, &pos, 3, 9467, 1021)
+}
+
+@(test)
+test_perft_cpw_pos5 :: proc(t: ^testing.T) {
+	pos := process_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8")
+
+	expect_perft(t, &pos, 1, 44, -1)
+	expect_perft(t, &pos, 2, 1486, -1)
+	expect_perft(t, &pos, 3, 62379, -1)
+}
+
+@(test)
+test_perft_cpw_pos6 :: proc(t: ^testing.T) {
+	pos := process_fen("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10 ")
+
+	expect_perft(t, &pos, 1, 46, -1)
+	expect_perft(t, &pos, 2, 2079, -1)
+	expect_perft(t, &pos, 3, 89890, -1)
 }
