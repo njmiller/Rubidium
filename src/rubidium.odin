@@ -34,61 +34,73 @@ process_fen :: proc(fen: string) -> GamePosition {
 			pos_out.material[.Black] += PIECE_VALUE[.Rook]
 			pos_out.psqt_mid[.Black] += rook_square_table[sq_bl]
 			pos_out.psqt_end[.Black] += rook_square_table[sq_bl]
+			pos_out.phase += PHASE_WEIGHT[.Rook]
 		case 'p':
 			pos_out.black.Pawns = pos_out.black.Pawns | bb_tmp
 			pos_out.material[.Black] += PIECE_VALUE[.Pawn]
 			pos_out.psqt_mid[.Black] += pawn_square_table[sq_bl]
 			pos_out.psqt_end[.Black] += pawn_square_table[sq_bl]
+			pos_out.phase += PHASE_WEIGHT[.Pawn]
 		case 'n':
 			pos_out.black.Knights = pos_out.black.Knights | bb_tmp
 			pos_out.material[.Black] += PIECE_VALUE[.Knight]
 			pos_out.psqt_mid[.Black] += knight_square_table[sq_bl]
 			pos_out.psqt_end[.Black] += knight_square_table[sq_bl]
+			pos_out.phase += PHASE_WEIGHT[.Knight]
 		case 'b':
 			pos_out.black.Bishops = pos_out.black.Bishops | bb_tmp
 			pos_out.material[.Black] += PIECE_VALUE[.Bishop]
 			pos_out.psqt_mid[.Black] += bishop_square_table[sq_bl]
 			pos_out.psqt_end[.Black] += bishop_square_table[sq_bl]
+			pos_out.phase += PHASE_WEIGHT[.Bishop]
 		case 'q':
 			pos_out.black.Queens = pos_out.black.Queens | bb_tmp
 			pos_out.material[.Black] += PIECE_VALUE[.Queen]
 			pos_out.psqt_mid[.Black] += queen_square_table[sq_bl]
 			pos_out.psqt_end[.Black] += queen_square_table[sq_bl]
+			pos_out.phase += PHASE_WEIGHT[.Queen]
 		case 'k':
 			pos_out.black.King = pos_out.black.King | bb_tmp
 			pos_out.material[.Black] += PIECE_VALUE[.King]
 			pos_out.psqt_mid[.Black] += king_square_mid[sq_bl]
 			pos_out.psqt_end[.Black] += king_square_end[sq_bl]
+			pos_out.phase += PHASE_WEIGHT[.King]
 		case 'R':
 			pos_out.white.Rooks = pos_out.white.Rooks | bb_tmp
 			pos_out.material[.White] += PIECE_VALUE[.Rook]
 			pos_out.psqt_mid[.White] += rook_square_table[sq]
 			pos_out.psqt_end[.White] += rook_square_table[sq]
+			pos_out.phase += PHASE_WEIGHT[.Rook]
 		case 'P':
 			pos_out.white.Pawns = pos_out.white.Pawns | bb_tmp
 			pos_out.material[.White] += PIECE_VALUE[.Pawn]
 			pos_out.psqt_mid[.White] += pawn_square_table[sq]
 			pos_out.psqt_end[.White] += pawn_square_table[sq]
+			pos_out.phase += PHASE_WEIGHT[.Pawn]
 		case 'N':
 			pos_out.white.Knights = pos_out.white.Knights | bb_tmp
 			pos_out.material[.White] += PIECE_VALUE[.Knight]
 			pos_out.psqt_mid[.White] += knight_square_table[sq]
 			pos_out.psqt_end[.White] += knight_square_table[sq]
+			pos_out.phase += PHASE_WEIGHT[.Knight]
 		case 'B':
 			pos_out.white.Bishops = pos_out.white.Bishops | bb_tmp
 			pos_out.material[.White] += PIECE_VALUE[.Bishop]
 			pos_out.psqt_mid[.White] += bishop_square_table[sq]
 			pos_out.psqt_end[.White] += bishop_square_table[sq]
+			pos_out.phase += PHASE_WEIGHT[.Bishop]
 		case 'Q':
 			pos_out.white.Queens = pos_out.white.Queens | bb_tmp
 			pos_out.material[.White] += PIECE_VALUE[.Queen]
 			pos_out.psqt_mid[.White] += queen_square_table[sq]
 			pos_out.psqt_end[.White] += queen_square_table[sq]
+			pos_out.phase += PHASE_WEIGHT[.Queen]
 		case 'K':
 			pos_out.white.King = pos_out.white.King | bb_tmp
 			pos_out.material[.White] += PIECE_VALUE[.King]
 			pos_out.psqt_mid[.White] += king_square_mid[sq]
 			pos_out.psqt_end[.White] += king_square_end[sq]
+			pos_out.phase += PHASE_WEIGHT[.King]
 		case '1' ..= '8':
 			col += uint(fen[idx] - 48) - 1
 		case '/':

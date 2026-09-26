@@ -1,7 +1,5 @@
 package main
 
-import "core:container/queue"
-
 nega_max :: proc(depth: int, pos: ^GamePosition) -> int {
 	if depth == 0 do return eval_position(pos)
 

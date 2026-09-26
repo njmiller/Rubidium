@@ -18,6 +18,7 @@ Move :: struct {
 MoveInfo :: struct {
 	is_capture:    bool,
 	is_en_passant: bool,
+	is_castle:     bool,
 	capture:       Piece,
 	castling:      bit_set[Castling],
 	en_passant:    int,
@@ -30,13 +31,15 @@ MoveList :: struct {
 }
 
 PerftStats :: struct {
-	nodes:      u64,
-	captures:   u64,
-	en_passant: u64,
-	castles:    u64,
-	promotions: u64,
-	checks:     u64,
-	checkmates: u64,
+	nodes:            u64,
+	captures:         u64,
+	en_passant:       u64,
+	castles:          u64,
+	promotions:       u64,
+	checks:           u64,
+	checkmates:       u64,
+	discovery_checks: u64,
+	double_checks:    u64,
 }
 
 knight_moves: [64]BitBoard
@@ -652,6 +655,8 @@ apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
 		my_pos.Rooks |= rook_to_bb
 		my_pos.AllPieces &~= rook_from_bb
 		my_pos.AllPieces |= rook_to_bb
+
+		info.is_castle = true
 	
 		// Update piece location evaluation for rook
 		piece_rook : Piece = {.Rook, move.piece.color}
@@ -714,6 +719,7 @@ apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
 		prom_piece : Piece = {move.promotion, move.piece.color}
 		position.psqt_mid[move.piece.color] += psqt_value_mid(prom_piece, move.pos_final)
 		position.psqt_end[move.piece.color] += psqt_value_end(prom_piece, move.pos_final)
+		position.material[move.piece.color] += PIECE_VALUE[move.promotion] - PIECE_VALUE[.Pawn]
 	}
 		
 	// Update location information for move
@@ -724,14 +730,6 @@ apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
 
 	return info
 }
-
-/*
-undo_move :: proc(move: Move, info: MoveInfo, position: GamePosition) -> GamePosition {
-	position_tmp := position
-	undo_move_inplace(move, info, &position_tmp)
-	return position_tmp
-}
-*/
 
 ep_captured_square :: #force_inline proc(move: Move) -> int {
 	return move.pos_final + (move.piece.color == .White ? -8 : 8)
@@ -870,6 +868,7 @@ undo_move_inplace :: proc(move: Move, info: MoveInfo, position: ^GamePosition) {
 		prom_piece : Piece = {move.promotion, move.piece.color}
 		position.psqt_mid[move.piece.color] -= psqt_value_mid(prom_piece, move.pos_final)
 		position.psqt_end[move.piece.color] -= psqt_value_end(prom_piece, move.pos_final)
+		position.material[move.piece.color] += PIECE_VALUE[.Pawn] - PIECE_VALUE[move.promotion]
 	}
 	
 	// Update location information for move
@@ -878,6 +877,12 @@ undo_move_inplace :: proc(move: Move, info: MoveInfo, position: ^GamePosition) {
 	position.psqt_end[move.piece.color] += psqt_value_end(move.piece, move.pos_init)
 	position.psqt_end[move.piece.color] -= psqt_value_end(move.piece, move.pos_final)
 
+}
+
+opp_color :: #force_inline proc(color: Color) -> Color {
+	if color == .White do return .Black
+
+	return .White
 }
 
 perft :: proc(depth: int, position: ^GamePosition, stats: ^PerftStats) {
@@ -904,6 +909,8 @@ perft :: proc(depth: int, position: ^GamePosition, stats: ^PerftStats) {
 				if move.is_capture do stats.captures += 1
 				if info.is_en_passant do stats.en_passant += 1
 				if move.promotion != .Pawn do stats.promotions += 1
+				if info.is_castle do stats.castles += 1
+				if is_in_check(opp_color(move.piece.color), position) do stats.checks += 1
 			}
 			perft(depth - 1, position, stats)
 		}
