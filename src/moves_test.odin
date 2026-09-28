@@ -6,7 +6,7 @@ import "core:testing"
 test_knight_moves :: proc(_: ^testing.T) {
 
 	// Initialize knight moves array
-	init_knight_moves()
+	// init_knight_moves()
 
 	// Check several parts of the array
 	kA1 := C2 | B3
@@ -20,14 +20,13 @@ test_knight_moves :: proc(_: ^testing.T) {
 	assert(knight_moves[idx_C7] == kC7)
 }
 
-@(test)
-test_magic_moves :: proc(t: ^testing.T) {
-	test_bishop_moves(t)
-	test_rook_moves(t)
-
-}
-
 // @(test)
+// test_magic_moves :: proc(t: ^testing.T) {
+	// test_bishop_moves(t)
+	// test_rook_moves(t)
+// }
+
+@(test)
 test_bishop_moves :: proc(_: ^testing.T) {
 	// Define an occupancy that will be used for testing
 	// bishop moves
@@ -75,7 +74,7 @@ test_bishop_moves :: proc(_: ^testing.T) {
 }
 
 
-// @(test)
+@(test)
 test_rook_moves :: proc(_: ^testing.T) {
 	occupancy := G5 | G3 | D2 | F4
 

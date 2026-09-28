@@ -235,16 +235,6 @@ gen_moves :: proc(position: ^GamePosition) -> MoveList {
 	piece: Piece
 	color: Color = position.turn
 
-	/*
-    if color == .White {
-        my_pos = position.White
-        opp_pos = position.Black
-    } else if color == .Black {
-        my_pos = position.Black
-        opp_pos = position.White
-    }
-    */
-
 	my_pos, opp_pos: ^PositionOneColor
 	switch color {
 	case .White:
@@ -308,6 +298,8 @@ gen_moves :: proc(position: ^GamePosition) -> MoveList {
 
 	// gen_castle_move(moves, position)
 	gen_castle_move(&move_list, position)
+
+	ncap := partition_captures_first(&move_list)
 
 	return move_list
 
@@ -439,7 +431,7 @@ add_move_to_list :: proc(ml: ^MoveList, m: Move) {
 }
 
 // Move captures to the front of the list and return the number of captures
-partition_captures_first :: proc(ml: ^MoveList, m: Move) -> int {
+partition_captures_first :: proc(ml: ^MoveList) -> int {
 	ncap := 0
 	for i in 0..<ml.n {
 		// If it is a capture swap with earliest element in list that is
