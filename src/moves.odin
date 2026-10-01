@@ -723,6 +723,17 @@ apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
 	return info
 }
 
+// Init/final position and promotion value are enough to determine
+// whether two moves are the same
+move_equal :: proc(a, b: Move) -> bool {
+	if a.pos_final != b.pos_final do return false
+	if a.pos_init != b.pos_init do return false
+
+	if a.promotion != b.promotion do return false
+
+	return true
+}
+
 ep_captured_square :: #force_inline proc(move: Move) -> int {
 	return move.pos_final + (move.piece.color == .White ? -8 : 8)
 }
@@ -933,13 +944,9 @@ perft_divide :: proc(depth: int, position: ^GamePosition) -> u64 {
 			total_nodes += stats.nodes
 
 			// Print move in UCI format (e.g. e2e4)
-			init_file := 'a' + u8(move.pos_init % 8)
-			init_rank := '1' + u8(move.pos_init / 8)
-
-			final_file := 'a' + u8(move.pos_final % 8)
-			final_rank := '1' + u8(move.pos_final / 8)
-
-			fmt.printf("%c%c%c%c: %d ", init_file, init_rank, final_file, final_rank, stats.nodes)
+			buf: [5]u8
+			s := move_to_uci(move, &buf)
+			fmt.printf("%s: %d ", s, stats.nodes)
 			fmt.println(move.piece.color, move.piece.piecetype)
 		}
 

@@ -13,6 +13,8 @@ process_fen :: proc(fen: string) -> GamePosition {
 
 	col, row: uint
 
+	nchars := len(fen)
+
 	idx := 0
 	col = 1
 	row = 8
@@ -169,25 +171,28 @@ process_fen :: proc(fen: string) -> GamePosition {
 		idx += 1
 	}
 
-	is_hm := true
-	hm := 0
-	for is_hm {
-		switch fen[idx] {
-		case ' ':
-			is_hm = false
-		case '0' ..= '9':
-			hm = 10 * hm + int(fen[idx]) - int('0')
+	// Since halfmove and movenum can be omitted from some FEN strings
+	if idx < nchars {
+		is_hm := true
+		hm := 0
+		for is_hm {
+			switch fen[idx] {
+			case ' ':
+				is_hm = false
+			case '0' ..= '9':
+				hm = 10 * hm + int(fen[idx]) - int('0')
+			}
+			idx += 1
 		}
-		idx += 1
-	}
-	pos_out.halfmove = hm
+		pos_out.halfmove = hm
 
-	nfen := len(fen)
-	movenum := 0
-	for i in idx ..< nfen {
-		movenum = 10 * movenum + int(fen[i]) - int('0')
+		nfen := len(fen)
+		movenum := 0
+		for i in idx ..< nfen {
+			movenum = 10 * movenum + int(fen[i]) - int('0')
+		}
+		pos_out.movenum = movenum
 	}
-	pos_out.movenum = movenum
 
 	pos_out.black.AllPieces =
 		pos_out.black.King |
@@ -205,10 +210,15 @@ process_fen :: proc(fen: string) -> GamePosition {
 		pos_out.white.Bishops |
 		pos_out.white.Pawns
 
+	pos_out.hash = compute_hash(&pos_out)
+
 	return pos_out
 }
 
 run_perft :: proc(fen: string, depth: int) {
+	fmt.println(fen)
+	fmt.println(depth)
+
 	pos := process_fen(fen)
 
 	perft_divide(depth, &pos)

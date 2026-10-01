@@ -3,6 +3,32 @@ package main
 import "core:fmt"
 import "core:strings"
 
+move_to_uci :: proc(m: Move, buf: ^[5]u8) -> string {
+
+	buf[0] = 'a' + u8(m.pos_init % 8)
+	buf[1] = '1' + u8(m.pos_init / 8)
+
+	buf[2] = 'a' + u8(m.pos_final % 8)
+	buf[3] = '1' + u8(m.pos_final / 8)
+
+	n := 4
+	switch m.promotion {
+		case .Pawn, .King, .All:
+		case .Knight:
+			buf[4]= 'n'
+		case .Bishop:
+			buf[4] = 'b'
+		case .Rook:
+			buf[4] = 'r'
+		case .Queen:
+			buf[4] = 'q'
+	}
+
+	if m.promotion != .Pawn do n = 5
+
+	return string(buf[:n])
+}
+
 read_uci_gui :: proc(input: string) {
 	trimmed := strings.trim_space(input)
 	tokens := strings.split(trimmed, " ")
@@ -183,25 +209,6 @@ process_uci_move_color :: proc(pos: GamePosition, pos_str: string) -> Color {
 	return .White
 }
 
-determine_piece :: proc(pos: PositionOneColor, sq_bb: BitBoard) -> PieceType {
-	if pos.Pawns & sq_bb != 0 {
-		return .Pawn
-	} else if pos.Knights & sq_bb != 0 {
-		return .Knight
-	} else if pos.Bishops & sq_bb != 0 {
-		return .Bishop
-	} else if pos.Rooks & sq_bb != 0 {
-		return .Rook
-	} else if pos.Queens & sq_bb != 0 {
-		return .Queen
-	} else if pos.King & sq_bb != 0 {
-		return .King
-	}
-
-	// fmt.println("Error in determining piece")
-	return .Pawn
-}
-
 process_uci_move :: proc(pos: GamePosition, move_str: string) -> Move {
 	pos_init := move_str[:2]
 	pos_final := move_str[2:]
@@ -225,10 +232,14 @@ process_uci_move :: proc(pos: GamePosition, move_str: string) -> Move {
 
 	if check_color == .White {
 		if pos.black.AllPieces & sq_bb != 0 do is_capture = true
-		piece_type = determine_piece(pos.white, sq_bb_i)
+		// piece_type = determine_piece(pos.white, sq_bb_i)
+		pt, pb := piece_at(pos_init_int, pos.white)
+		piece_type = pt
 	} else {
 		if pos.white.AllPieces & sq_bb != 0 do is_capture = true
-		piece_type = determine_piece(pos.black, sq_bb_i)
+		// piece_type = determine_piece(pos.black, sq_bb_i)
+		pt, pb := piece_at(pos_init_int, pos.black)
+		piece_type = pt
 	}
 
 	piece_tmp := Piece{piece_type, check_color}

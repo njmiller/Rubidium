@@ -2,6 +2,7 @@ package main
 
 import "core:fmt"
 import "core:math/rand"
+import "base:runtime"
 
 BitBoard :: distinct u64
 //BitBoard :: distinct bit_set[0..<64]
@@ -168,8 +169,9 @@ PositionOneColor :: struct {
 }
 
 GamePosition :: struct {
-	white:      PositionOneColor,
-	black:      PositionOneColor,
+	// white:      PositionOneColor,
+	// black:      PositionOneColor,
+	bb:         [Color][PieceType]BitBoard,
 	castling:   bit_set[Castling], // Says what castling is available
 	en_passant: int, // What square is available for en passant capture
 	turn:       Color,
@@ -181,6 +183,7 @@ GamePosition :: struct {
 	psqt_mid:   [Color]int, // piece-square tables
 	psqt_end:   [Color]int, // endgame piece-square table
 	phase:      int,        // 0 = endgame, MAX_PHASE = midgame
+	hash:       u64,        // Zobrish hash
 }
 
 Castling :: enum {
@@ -210,6 +213,53 @@ Piece :: struct {
 	color:     Color,
 }
 
+Zobrist :: struct {
+	piece :   [Color][PieceType][64]u64,
+	castle :  [16]u64,
+	ep_file : [8]u64,
+	side :    u64,
+}
+
+zobrist : Zobrist
+
+splitmix64 :: proc(state: ^u64) -> u64 {
+    state^ += 0x9E3779B97F4A7C15
+    z := state^
+    z = (z ~ (z >> 30)) * 0xBF58476D1CE4E5B9
+    z = (z ~ (z >> 27)) * 0x94D049BB133111EB
+    return z ~ (z >> 31)
+}
+
+@(init)
+init_zobrist :: proc "contextless" () {
+	context = runtime.default_context()
+	seed: u64 = 0x1234_5678_9ABC_DEF0
+
+    // for p in do for sq in 0..<64 do z.pieces[p][sq] = splitmix64(&seed)
+	for &by_type in zobrist.piece {
+		for &squares in by_type {
+			for &key in squares {
+				key = splitmix64(&seed)
+			}
+		}
+	}
+
+    zobrist.side = splitmix64(&seed)
+    
+	zobrist.castle[0] = 0  // no rights → contributes nothing (optional convention)
+    for i in 1..<16 do zobrist.castle[i] = splitmix64(&seed)
+    
+	for f in 0..<8  do zobrist.ep_file[f]  = splitmix64(&seed)
+}
+
+compute_hash :: proc(pos: ^GamePosition) -> u64 {
+	h: u64 = 0
+
+	// White
+	
+	return 1
+}
+
 empty_position_onecolor :: proc() -> PositionOneColor {
 	pos: PositionOneColor
 
@@ -234,6 +284,27 @@ empty_position :: proc() -> GamePosition {
 	pos.en_passant = -1
 
 	return pos
+}
+
+piece_at :: proc(sq: int, pos: PositionOneColor) -> (PieceType, bool) {
+
+	sq_bb := sq_to_bb(sq)
+	
+	if pos.Pawns & sq_bb != 0 {
+		return .Pawn, true
+	} else if pos.Knights & sq_bb != 0 {
+		return .Knight, true
+	} else if pos.Bishops & sq_bb != 0 {
+		return .Bishop, true
+	} else if pos.Rooks & sq_bb != 0 {
+		return .Rook, true
+	} else if pos.Queens & sq_bb != 0 {
+		return .Queen, true
+	} else if pos.King & sq_bb != 0 {
+		return .King, true
+	}
+
+	return .Pawn, false
 }
 
 //sq runs from 0 to 63 and rank, file go from 0 to 7
