@@ -13,7 +13,7 @@ move_to_uci :: proc(m: Move, buf: ^[5]u8) -> string {
 
 	n := 4
 	switch m.promotion {
-		case .Pawn, .King, .All:
+		case .Pawn, .King:
 		case .Knight:
 			buf[4]= 'n'
 		case .Bishop:
@@ -187,64 +187,14 @@ uci_square_to_index :: proc(square: string) -> int {
 	return rank * 8 + file
 }
 
-process_uci_move_color :: proc(pos: GamePosition, pos_str: string) -> Color {
-	square_idx := uci_square_to_index(pos_str)
-	if square_idx == -1 {
-		return .White // Invalid square, return default
-	}
+process_uci_move :: proc(pos: ^GamePosition, move_str: string) -> Move {
+	pos_init_int := uci_square_to_index(move_str[:2])
+	pos_final_int := uci_square_to_index(move_str[2:])
 
-	square_bb := BitBoard(1) << uint(square_idx)
+	// The moving piece comes from the mailbox; a piece on the final square
+	// means the move is a capture
+	piece, _ := piece_at(pos, pos_init_int)
+	_, is_capture := piece_at(pos, pos_final_int)
 
-	// Check if white piece is on this square
-	if (pos.white.AllPieces & square_bb) != 0 {
-		return .White
-	}
-
-	// Check if black piece is on this square  
-	if (pos.black.AllPieces & square_bb) != 0 {
-		return .Black
-	}
-
-	// No piece on square, return default
-	return .White
-}
-
-process_uci_move :: proc(pos: GamePosition, move_str: string) -> Move {
-	pos_init := move_str[:2]
-	pos_final := move_str[2:]
-
-	is_capture := false
-	piece_type: PieceType
-
-	// Determine which color is moving
-	// TODO: Should know this from GamePosition and is not a part of
-	// the Move structure
-	check_color := process_uci_move_color(pos, pos_init)
-	// move_out: Move
-
-	pos_init_int := uci_square_to_index(pos_init)
-	pos_final_int := uci_square_to_index(pos_final)
-
-	// Check whether a piece of the opposite color is on the final square
-	// If so, it is a capture
-	sq_bb := sq_to_bb(pos_final_int)
-	sq_bb_i := sq_to_bb(pos_init_int)
-
-	if check_color == .White {
-		if pos.black.AllPieces & sq_bb != 0 do is_capture = true
-		// piece_type = determine_piece(pos.white, sq_bb_i)
-		pt, pb := piece_at(pos_init_int, pos.white)
-		piece_type = pt
-	} else {
-		if pos.white.AllPieces & sq_bb != 0 do is_capture = true
-		// piece_type = determine_piece(pos.black, sq_bb_i)
-		pt, pb := piece_at(pos_init_int, pos.black)
-		piece_type = pt
-	}
-
-	piece_tmp := Piece{piece_type, check_color}
-
-	move_out := Move{pos_init_int, pos_final_int, piece_tmp, is_capture, .Pawn}
-
-	return move_out
+	return Move{pos_init_int, pos_final_int, piece, is_capture, .Pawn}
 }

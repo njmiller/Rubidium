@@ -1,11 +1,10 @@
 package main
 
 import "core:fmt"
-import "core:math/rand"
 import "base:runtime"
+import "base:intrinsics"
 
 BitBoard :: distinct u64
-//BitBoard :: distinct bit_set[0..<64]
 
 RANK_1: BitBoard : 0x00000000000000FF
 RANK_2: BitBoard : 0x000000000000FF00
@@ -157,21 +156,10 @@ idx_F8 :: 61
 idx_G8 :: 62
 idx_H8 :: 63
 
-//Maybe this would make the move generation code simpler
-PositionOneColor :: struct {
-	Pawns:     BitBoard,
-	Rooks:     BitBoard,
-	Bishops:   BitBoard,
-	Knights:   BitBoard,
-	Queens:    BitBoard,
-	King:      BitBoard,
-	AllPieces: BitBoard,
-}
-
 GamePosition :: struct {
-	// white:      PositionOneColor,
-	// black:      PositionOneColor,
 	bb:         [Color][PieceType]BitBoard,
+	occupied:   [Color]BitBoard,   // union of bb[color]
+	board:      [64]Maybe(Piece),  // mailbox for O(1) piece lookup by square
 	castling:   bit_set[Castling], // Says what castling is available
 	en_passant: int, // What square is available for en passant capture
 	turn:       Color,
@@ -193,20 +181,22 @@ Castling :: enum {
 	BLACKQUEENSIDE,
 }
 
-Color :: enum {
+Color :: enum u8 {
 	White,
 	Black,
 }
 
-PieceType :: enum {
+PieceType :: enum u8 {
 	Pawn,
 	Knight,
 	Bishop,
 	Rook,
 	Queen,
 	King,
-	All,
 }
+
+// FEN/display characters indexed by int(color) * 6 + int(piecetype)
+PIECE_CHARS := "PNBRQKpnbrqk"
 
 Piece :: struct {
 	piecetype: PieceType,
@@ -215,7 +205,8 @@ Piece :: struct {
 
 Zobrist :: struct {
 	piece :   [Color][PieceType][64]u64,
-	castle :  [16]u64,
+	// castle :  [16]u64,
+	castle :  [Castling]u64,
 	ep_file : [8]u64,
 	side :    u64,
 }
@@ -246,39 +237,42 @@ init_zobrist :: proc "contextless" () {
 
     zobrist.side = splitmix64(&seed)
     
-	zobrist.castle[0] = 0  // no rights → contributes nothing (optional convention)
-    for i in 1..<16 do zobrist.castle[i] = splitmix64(&seed)
-    
-	for f in 0..<8  do zobrist.ep_file[f]  = splitmix64(&seed)
+	for &key in zobrist.castle do key = splitmix64(&seed)
+
+	for f in 0..<8 do zobrist.ep_file[f]  = splitmix64(&seed)
 }
 
 compute_hash :: proc(pos: ^GamePosition) -> u64 {
 	h: u64 = 0
 
-	// White
+	// Pieces
+	for color in Color {
+		for pt in PieceType {
+			bb := pos.bb[color][pt]
+			for bb != 0 {
+				sq := intrinsics.count_trailing_zeros(bb)
+				h ~= zobrist.piece[color][pt][sq]
+				bb &= bb - 1
+			}
+		}
+	}
 	
-	return 1
-}
+	// Side to move
+	if pos.turn == .Black do h ~= zobrist.side
 
-empty_position_onecolor :: proc() -> PositionOneColor {
-	pos: PositionOneColor
+	// Castling
+	for right in Castling {
+		if right in pos.castling do h ~= zobrist.castle[right]
+	}
 
-	pos.King = 0
-	pos.Queens = 0
-	pos.Rooks = 0
-	pos.Knights = 0
-	pos.Bishops = 0
-	pos.Pawns = 0
-	pos.AllPieces = 0
+	// En passant
+	if pos.en_passant >= 0 do h ~=zobrist.ep_file[pos.en_passant % 8]
 
-	return pos
+	return h
 }
 
 empty_position :: proc() -> GamePosition {
 	pos: GamePosition
-
-	pos.white = empty_position_onecolor()
-	pos.black = empty_position_onecolor()
 
 	pos.castling = {}
 	pos.en_passant = -1
@@ -286,25 +280,61 @@ empty_position :: proc() -> GamePosition {
 	return pos
 }
 
-piece_at :: proc(sq: int, pos: PositionOneColor) -> (PieceType, bool) {
+piece_at :: #force_inline proc(pos: ^GamePosition, sq: int) -> (Piece, bool) {
+	return pos.board[sq].?
+}
 
-	sq_bb := sq_to_bb(sq)
-	
-	if pos.Pawns & sq_bb != 0 {
-		return .Pawn, true
-	} else if pos.Knights & sq_bb != 0 {
-		return .Knight, true
-	} else if pos.Bishops & sq_bb != 0 {
-		return .Bishop, true
-	} else if pos.Rooks & sq_bb != 0 {
-		return .Rook, true
-	} else if pos.Queens & sq_bb != 0 {
-		return .Queen, true
-	} else if pos.King & sq_bb != 0 {
-		return .King, true
+all_occupied :: #force_inline proc(pos: ^GamePosition) -> BitBoard {
+	return pos.occupied[.White] | pos.occupied[.Black]
+}
+
+char_to_piece :: proc(c: u8) -> (Piece, bool) {
+	for i in 0 ..< len(PIECE_CHARS) {
+		if PIECE_CHARS[i] == c do return Piece{PieceType(i % 6), Color(i / 6)}, true
 	}
+	return {}, false
+}
 
-	return .Pawn, false
+piece_to_char :: #force_inline proc(p: Piece) -> u8 {
+	return PIECE_CHARS[int(p.color) * 6 + int(p.piecetype)]
+}
+
+// put_piece/remove_piece/move_piece are the only procedures that should change
+// piece placement: they keep the bitboards, occupancy, mailbox and incremental
+// eval fields in sync
+put_piece :: proc(pos: ^GamePosition, p: Piece, sq: int) {
+	sq_bb := sq_to_bb(sq)
+	pos.bb[p.color][p.piecetype] |= sq_bb
+	pos.occupied[p.color] |= sq_bb
+	pos.board[sq] = p
+
+	pos.material[p.color] += PIECE_VALUE[p.piecetype]
+	pos.phase += PHASE_WEIGHT[p.piecetype]
+	pos.psqt_mid[p.color] += psqt_value_mid(p, sq)
+	pos.psqt_end[p.color] += psqt_value_end(p, sq)
+
+	pos.hash ~= zobrist.piece[p.color][p.piecetype][sq]
+}
+
+remove_piece :: proc(pos: ^GamePosition, sq: int) -> Piece {
+	p := pos.board[sq].? or_else panic("remove_piece on empty square")
+	sq_bb := sq_to_bb(sq)
+	pos.bb[p.color][p.piecetype] &~= sq_bb
+	pos.occupied[p.color] &~= sq_bb
+	pos.board[sq] = nil
+
+	pos.material[p.color] -= PIECE_VALUE[p.piecetype]
+	pos.phase -= PHASE_WEIGHT[p.piecetype]
+	pos.psqt_mid[p.color] -= psqt_value_mid(p, sq)
+	pos.psqt_end[p.color] -= psqt_value_end(p, sq)
+
+	pos.hash ~= zobrist.piece[p.color][p.piecetype][sq]
+
+	return p
+}
+
+move_piece :: proc(pos: ^GamePosition, from: int, to: int) {
+	put_piece(pos, remove_piece(pos, from), to)
 }
 
 //sq runs from 0 to 63 and rank, file go from 0 to 7
@@ -354,90 +384,16 @@ display_bitboard :: proc(bitboard: BitBoard) {
 }
 
 display_position :: proc(position: GamePosition) {
-	shift: uint
-	mask: BitBoard
-
-	for i in 0 ..< 8 {
-		for j in 0 ..< 8 {
-			shift = uint((7 - i) * 8 + j)
-			mask = BitBoard(1) << shift
-			switch {
-			case (mask & position.white.King) > 0:
-				fmt.print('K')
-			case (mask & position.white.Queens) > 0:
-				fmt.print('Q')
-			case (mask & position.white.Rooks) > 0:
-				fmt.print('R')
-			case (mask & position.white.Bishops) > 0:
-				fmt.print('B')
-			case (mask & position.white.Knights) > 0:
-				fmt.print('N')
-			case (mask & position.white.Pawns) > 0:
-				fmt.print('P')
-			case (mask & position.black.King) > 0:
-				fmt.print('k')
-			case (mask & position.black.Queens) > 0:
-				fmt.print('q')
-			case (mask & position.black.Rooks) > 0:
-				fmt.print('r')
-			case (mask & position.black.Bishops) > 0:
-				fmt.print('b')
-			case (mask & position.black.Knights) > 0:
-				fmt.print('n')
-			case (mask & position.black.Pawns) > 0:
-				fmt.print('p')
-			case:
+	for rank := 7; rank >= 0; rank -= 1 {
+		for file in 0 ..< 8 {
+			if p, ok := position.board[rank_file_to_sq(rank, file)].?; ok {
+				fmt.print(rune(piece_to_char(p)))
+			} else {
 				fmt.print('.')
 			}
 		}
 		fmt.print("\n")
 	}
-}
-
-get_bitboard :: proc(bitboards: GamePosition, piece: PieceType, color: Color) -> BitBoard {
-	switch color {
-	case .White:
-		{
-			switch piece {
-			case .Pawn:
-				return bitboards.white.Pawns
-			case .Knight:
-				return bitboards.white.Knights
-			case .Bishop:
-				return bitboards.white.Bishops
-			case .Rook:
-				return bitboards.white.Rooks
-			case .Queen:
-				return bitboards.white.Queens
-			case .King:
-				return bitboards.white.King
-			case .All:
-				return bitboards.white.AllPieces
-			}
-		}
-	case .Black:
-		{
-			switch piece {
-			case .Pawn:
-				return bitboards.black.Pawns
-			case .Knight:
-				return bitboards.black.Knights
-			case .Bishop:
-				return bitboards.black.Bishops
-			case .Rook:
-				return bitboards.black.Rooks
-			case .Queen:
-				return bitboards.black.Queens
-			case .King:
-				return bitboards.black.King
-			case .All:
-				return bitboards.black.AllPieces
-			}
-		}
-	}
-
-	panic("Should never get past switch statement in get_bitboard.")
-
 }
 
 gen_newgame :: proc() -> GamePosition {

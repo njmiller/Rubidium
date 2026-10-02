@@ -14,7 +14,7 @@ nega_max :: proc(depth: int, pos: ^GamePosition, alpha: int, beta: int) -> int {
 	score : int
 	alpha := alpha
 
-	maxscore := -1000000
+	maxscore := -INF
 
 	all_moves := gen_moves(pos)
 

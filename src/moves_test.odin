@@ -119,8 +119,8 @@ test_process_fen :: proc(_: ^testing.T) {
 	white_pawns := A2 | B2 | C2 | D2 | E2 | F2 | G2 | H2
 	black_pawns := A7 | B7 | C7 | D7 | E7 | F7 | G7 | H7
 
-	assert(pos.white.Pawns == white_pawns)
-	assert(pos.black.Pawns == black_pawns)
+	assert(pos.bb[.White][.Pawn] == white_pawns)
+	assert(pos.bb[.Black][.Pawn] == black_pawns)
 
 	assert(pos.castling == {.WHITEKINGSIDE, .WHITEQUEENSIDE, .BLACKKINGSIDE, .BLACKQUEENSIDE})
 	assert(pos.en_passant == -1)
@@ -148,9 +148,9 @@ test_en_passant :: proc(_: ^testing.T) {
 	move := Move{idx_D4, idx_E3, Piece{.Pawn, .Black}, true, .Pawn}
 	info := apply_move_inplace(move, &pos)
 
-	assert((pos.black.Pawns & E3) != 0)
-	assert((pos.white.Pawns & E4) == 0)
-	assert((pos.white.AllPieces & E4) == 0)
+	assert((pos.bb[.Black][.Pawn] & E3) != 0)
+	assert((pos.bb[.White][.Pawn] & E4) == 0)
+	assert((pos.occupied[.White] & E4) == 0)
 
 	undo_move_inplace(move, info, &pos)
 
@@ -166,14 +166,14 @@ test_promotion :: proc(_: ^testing.T) {
 	move := Move{idx_A7, idx_A8, Piece{.Pawn, .White}, false, .Queen}
 	info := apply_move_inplace(move, &pos)
 
-	assert((pos.white.Queens & A8) != 0)
-	assert((pos.white.Pawns & A8) == 0)
-	assert((pos.white.Pawns & A7) == 0)
+	assert((pos.bb[.White][.Queen] & A8) != 0)
+	assert((pos.bb[.White][.Pawn] & A8) == 0)
+	assert((pos.bb[.White][.Pawn] & A7) == 0)
 
 	undo_move_inplace(move, info, &pos)
 
-	assert((pos.white.Pawns & A7) != 0)
-	assert(pos.white.Queens == 0)
+	assert((pos.bb[.White][.Pawn] & A7) != 0)
+	assert(pos.bb[.White][.Queen] == 0)
 }
 
 @(test)

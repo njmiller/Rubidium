@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:math/bits"
 import "core:math/rand"
 import "base:runtime"
+import "base:intrinsics"
 
 //Shifts are equal to the number of bits needed to describe
 //all the possible permutations for the occupancy. 
@@ -478,78 +479,10 @@ count_ones_u64 :: proc(b : u64) -> int {
 }
 */
 
-BitTable := [64]int {
-	63,
-	30,
-	3,
-	32,
-	25,
-	41,
-	22,
-	33,
-	15,
-	50,
-	42,
-	13,
-	11,
-	53,
-	19,
-	34,
-	61,
-	29,
-	2,
-	51,
-	21,
-	43,
-	45,
-	10,
-	18,
-	47,
-	1,
-	54,
-	9,
-	57,
-	0,
-	35,
-	62,
-	31,
-	40,
-	4,
-	49,
-	5,
-	52,
-	26,
-	60,
-	6,
-	23,
-	44,
-	46,
-	27,
-	56,
-	16,
-	7,
-	39,
-	48,
-	24,
-	59,
-	14,
-	12,
-	55,
-	38,
-	28,
-	58,
-	20,
-	37,
-	17,
-	36,
-	8,
-}
-
-pop_first_bit :: proc(bb: ^BitBoard) -> int {
-	b: BitBoard = bb^ ~ (bb^ - 1)
-	fold: u32 = u32((b & 0xffffffff) ~ (b >> 32))
-	bb^ = bb^ & (bb^ - 1)
-	return BitTable[(fold * 0x783a9b23) >> 26]
+pop_first_bit :: #force_inline proc(bb: ^BitBoard) -> int {
+	sq := int(intrinsics.count_trailing_zeros(bb^))
+	bb^ &= bb^ - 1
+	return sq
 }
 
 index_to_bb :: proc(index: int, bits: int, m: BitBoard) -> BitBoard {

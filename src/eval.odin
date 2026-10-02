@@ -18,7 +18,6 @@ PHASE_WEIGHT := [PieceType]int {
 	.Rook = 2,
 	.Queen = 4,
 	.King = 0,
-	.All = 0,
 }
 
 PIECE_VALUE := [PieceType]int {
@@ -28,7 +27,6 @@ PIECE_VALUE := [PieceType]int {
 	.Rook = 500,
 	.Queen = 900,
 	.King = 0, // never used but meeded for the arrau
-	.All = 0, // same as previous
 }
 
 //odinfmt: disable
@@ -117,7 +115,6 @@ PIECE_SQ_TABLE_MID := [PieceType][64]int {
 	.Rook = rook_square_table,
 	.Queen = queen_square_table,
 	.King = king_square_mid,
-	.All = {}, // unused
 }
 
 PIECE_SQ_TABLE_END := [PieceType][64]int {
@@ -127,7 +124,6 @@ PIECE_SQ_TABLE_END := [PieceType][64]int {
 	.Rook = rook_square_table,
 	.Queen = queen_square_table,
 	.King = king_square_end,
-	.All = {}, // unused
 }
 
 eval_position :: proc(pos: ^GamePosition) -> int {

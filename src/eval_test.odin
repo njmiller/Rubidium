@@ -8,24 +8,44 @@ import "core:testing"
 // eval tests to verify that the incrementally updated fields in
 // apply/undo_move_inplace never drift.
 recompute_eval_fields :: proc(pos: ^GamePosition) -> (material: [Color]int, psqt_mid: [Color]int, psqt_end: [Color]int, phase: int) {
-	piece_types := [6]PieceType{.Pawn, .Knight, .Bishop, .Rook, .Queen, .King}
-
-	for c in 0 ..< 2 {
-		color := Color(c)
-		for pt in piece_types {
-			bb := get_bitboard(pos^, pt, color)
+	for color in Color {
+		for pt in PieceType {
+			bb := pos.bb[color][pt]
 			for bb != 0 {
 				sq := pop_first_bit(&bb)
 				p := Piece{pt, color}
-				material[Color(c)] += PIECE_VALUE[pt]
-				psqt_mid[Color(c)] += psqt_value_mid(p, sq)
-				psqt_end[Color(c)] += psqt_value_end(p, sq)
+				material[color] += PIECE_VALUE[pt]
+				psqt_mid[color] += psqt_value_mid(p, sq)
+				psqt_end[color] += psqt_value_end(p, sq)
 				phase += PHASE_WEIGHT[pt]
 			}
 		}
 	}
 
 	return
+}
+
+// Asserts that the mailbox and occupancy bitboards agree with the per-piece
+// bitboards
+assert_board_consistent :: proc(t: ^testing.T, pos: ^GamePosition, label: string) {
+	for color in Color {
+		union_bb: BitBoard
+		for pt in PieceType do union_bb |= pos.bb[color][pt]
+		testing.expectf(t, pos.occupied[color] == union_bb,
+			"%s: occupied[%v] does not match piece bitboards", label, color)
+	}
+
+	for sq in 0 ..< 64 {
+		sq_bb := sq_to_bb(sq)
+		p, ok := piece_at(pos, sq)
+		if ok {
+			testing.expectf(t, pos.bb[p.color][p.piecetype] & sq_bb != 0,
+				"%s: mailbox has %v on %d but its bitboard does not", label, p, sq)
+		} else {
+			testing.expectf(t, all_occupied(pos) & sq_bb == 0,
+				"%s: mailbox empty on %d but square is occupied", label, sq)
+		}
+	}
 }
 
 // xorshift64 for deterministic pseudo-random move selection in tests. State is
@@ -67,6 +87,8 @@ pick_random_legal :: proc(pos: ^GamePosition, state: ^u64) -> (move: Move, info:
 // recompute, and that eval_position equals the tapered blend computed from the
 // recomputed values (catches blend/sign/tempo formula bugs too).
 assert_eval_consistent :: proc(t: ^testing.T, pos: ^GamePosition, label: string) {
+	assert_board_consistent(t, pos, label)
+
 	material, psqt_mid, psqt_end, phase := recompute_eval_fields(pos)
 
 	testing.expectf(

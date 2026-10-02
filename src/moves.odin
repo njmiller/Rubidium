@@ -23,12 +23,15 @@ MoveInfo :: struct {
 	castling:      bit_set[Castling],
 	en_passant:    int,
 	halfmove:      int,
+	hash:          u64,
 }
 
 MoveList :: struct {
 	moves : [256]Move,
 	n : int,
 }
+
+NULL_MOVE :: Move{}
 
 PerftStats :: struct {
 	nodes:            u64,
@@ -224,76 +227,45 @@ get_pawn_moves :: proc(
 }
 
 gen_moves :: proc(position: ^GamePosition) -> MoveList {
-	//This is better than the separate procedures because we only have to loop over a single bitboard
-	// moves: queue.Queue(Move)
-	// moves := new(queue.Queue(Move))
-	// queue.init(moves)
+	// This is better than the separate procedures because we only
+	// have to loop over a single bitboard
 	move_list : MoveList
 	move_list.n = 0
 
-	pos_bb, moves_bb, captures_bb: BitBoard
-	piece: Piece
-	color: Color = position.turn
+	us := position.turn
+	own := position.occupied[us]
+	enemy := position.occupied[opp_color(us)]
+	occupancy := own | enemy
 
-	my_pos, opp_pos: ^PositionOneColor
-	switch color {
-	case .White:
-		my_pos = &position.white
-		opp_pos = &position.black
-	case .Black:
-		my_pos = &position.black
-		opp_pos = &position.white
-	}
+	for pt in PieceType {
+		pieces := position.bb[us][pt]
+		for pieces != 0 {
+			sq := pop_first_bit(&pieces)
 
-	//TODO: Maybe do pop_first_bit for quicker move generation. Would need to time it
-	//to see if it is faster
-	for sq in 0 ..< 64 {
-		pos_bb = BitBoard(1) << uint(sq)
-		// Reset for every square: squares that match no case (empty squares
-		// or opponent pieces) must not re-emit the previous piece's moves
-		moves_bb = 0
-		captures_bb = 0
-		switch {
-		case (pos_bb & my_pos.Pawns) != 0:
-			moves_bb, captures_bb = get_pawn_moves(
-				sq,
-				color,
-				my_pos.AllPieces,
-				opp_pos.AllPieces,
-				position.en_passant,
-			)
+			moves_bb, captures_bb: BitBoard
+			if pt == .Pawn {
+				moves_bb, captures_bb = get_pawn_moves(sq, us, own, enemy, position.en_passant)
+			} else {
+				targets: BitBoard
+				#partial switch pt {
+				case .Knight:
+					targets = knight_moves[sq]
+				case .Bishop:
+					targets = get_bishop_moves(sq, occupancy)
+				case .Rook:
+					targets = get_rook_moves(sq, occupancy)
+				case .Queen:
+					targets = get_queen_moves(sq, occupancy)
+				case .King:
+					targets = king_moves[sq]
+				}
+				targets &~= own
+				captures_bb = targets & enemy
+				moves_bb = targets &~ enemy
+			}
 
-			piece = Piece{PieceType.Pawn, color}
-		case (pos_bb & my_pos.Knights) != 0:
-			piece = Piece{PieceType.Knight, color}
-			moves_bb = knight_moves[sq] & ~my_pos.AllPieces
-			captures_bb = moves_bb & opp_pos.AllPieces
-			moves_bb = moves_bb & ~captures_bb
-		case (pos_bb & my_pos.Rooks) != 0:
-			piece = Piece{PieceType.Rook, color}
-			moves_bb = get_rook_moves(sq, my_pos.AllPieces | opp_pos.AllPieces) & ~my_pos.AllPieces
-			captures_bb = moves_bb & opp_pos.AllPieces
-			moves_bb = moves_bb & ~captures_bb
-		case (pos_bb & my_pos.Bishops) != 0:
-			piece = Piece{PieceType.Bishop, color}
-			moves_bb =
-				get_bishop_moves(sq, my_pos.AllPieces | opp_pos.AllPieces) & ~my_pos.AllPieces
-			captures_bb = moves_bb & opp_pos.AllPieces
-			moves_bb = moves_bb & ~captures_bb
-		case (pos_bb & my_pos.Queens) != 0:
-			piece = Piece{PieceType.Queen, color}
-			moves_bb =
-				get_queen_moves(sq, my_pos.AllPieces | opp_pos.AllPieces) & ~my_pos.AllPieces
-			captures_bb = moves_bb & opp_pos.AllPieces
-			moves_bb = moves_bb & ~captures_bb
-		case (pos_bb & my_pos.King) != 0:
-			piece = Piece{PieceType.King, color}
-			moves_bb = king_moves[sq] & ~my_pos.AllPieces
-			captures_bb = moves_bb & opp_pos.AllPieces
-			moves_bb = moves_bb & ~captures_bb
+			bb_to_moves(&move_list, sq, Piece{pt, us}, moves_bb, captures_bb)
 		}
-		// bb_to_moves(moves, sq, piece, moves_bb, captures_bb)
-		bb_to_moves(&move_list, sq, piece, moves_bb, captures_bb)
 	}
 
 	// gen_castle_move(moves, position)
@@ -328,14 +300,14 @@ castle_rights_mask :: proc(sq: int) -> bit_set[Castling] {
 
 gen_castle_move :: proc(move_list: ^MoveList, position: ^GamePosition) {
 	color := position.turn
-	opp_color := color == .White ? Color.Black : Color.White
+	them := opp_color(color)
 	king_sq := color == .White ? idx_E1 : idx_E8
 	rank_offset := color == .White ? 0 : 56
 
 	// Can't castle while in check
-	if is_square_attacked(king_sq, opp_color, position) do return
+	if is_square_attacked(king_sq, them, position) do return
 
-	occupancy := position.white.AllPieces | position.black.AllPieces
+	occupancy := all_occupied(position)
 
 	// O-O: f and g files must be empty, and the king can't pass through or
 	// land on an attacked square
@@ -344,8 +316,8 @@ gen_castle_move :: proc(move_list: ^MoveList, position: ^GamePosition) {
 		f_sq := rank_offset + 5
 		g_sq := rank_offset + 6
 		if (occupancy & (sq_to_bb(f_sq) | sq_to_bb(g_sq))) == 0 &&
-		   !is_square_attacked(f_sq, opp_color, position) &&
-		   !is_square_attacked(g_sq, opp_color, position) {
+		   !is_square_attacked(f_sq, them, position) &&
+		   !is_square_attacked(g_sq, them, position) {
 			// queue.push_back(moves, Move{king_sq, g_sq, Piece{.King, color}, false, .Pawn})
 			add_move_to_list(move_list, Move{king_sq, g_sq, Piece{.King, color}, false, .Pawn})
 		}
@@ -359,8 +331,8 @@ gen_castle_move :: proc(move_list: ^MoveList, position: ^GamePosition) {
 		c_sq := rank_offset + 2
 		d_sq := rank_offset + 3
 		if (occupancy & (sq_to_bb(b_sq) | sq_to_bb(c_sq) | sq_to_bb(d_sq))) == 0 &&
-		   !is_square_attacked(d_sq, opp_color, position) &&
-		   !is_square_attacked(c_sq, opp_color, position) {
+		   !is_square_attacked(d_sq, them, position) &&
+		   !is_square_attacked(c_sq, them, position) {
 			// queue.push_back(moves, Move{king_sq, c_sq, Piece{.King, color}, false, .Pawn})
 			add_move_to_list(move_list, Move{king_sq, c_sq, Piece{.King, color}, false, .Pawn})
 		}
@@ -369,60 +341,58 @@ gen_castle_move :: proc(move_list: ^MoveList, position: ^GamePosition) {
 
 //Checks to see if the square sq is attacked by any pieces of by_color
 is_square_attacked :: proc(sq: int, by_color: Color, position: ^GamePosition) -> bool {
-	opp_pos := by_color == .White ? &position.white : &position.black
+	opp_bb := &position.bb[by_color]
 
 	// 1. Knight attacks
-	if (knight_moves[sq] & opp_pos.Knights) != 0 do return true
+	if (knight_moves[sq] & opp_bb[.Knight]) != 0 do return true
 
 	// 2. King attacks (prevents moving the king next to the opponent king)
-	if (king_moves[sq] & opp_pos.King) != 0 do return true
+	if (king_moves[sq] & opp_bb[.King]) != 0 do return true
 
 	// 3. Pawn attacks
 	rank, file := sq_to_rank_file(sq)
 	if by_color == .White {
 		// White pawns attack sq from below (e.g from sq-9 and sq-7)
 		if file != 0 && rank >= 1 {
-			if (opp_pos.Pawns & sq_to_bb(sq - 9)) != 0 do return true
+			if (opp_bb[.Pawn] & sq_to_bb(sq - 9)) != 0 do return true
 		}
 		if file != 7 && rank >= 1 {
-			if (opp_pos.Pawns & sq_to_bb(sq - 7)) != 0 do return true
+			if (opp_bb[.Pawn] & sq_to_bb(sq - 7)) != 0 do return true
 		}
 	} else {
 		//Black pawns attack sq from above (e.g from sq+7 and sq+9)
 		if file != 0 && rank <= 6 {
-			if (opp_pos.Pawns & sq_to_bb(sq + 7)) != 0 do return true
+			if (opp_bb[.Pawn] & sq_to_bb(sq + 7)) != 0 do return true
 		}
 		if file != 7 && rank <= 6 {
-			if (opp_pos.Pawns & sq_to_bb(sq + 9)) != 0 do return true
+			if (opp_bb[.Pawn] & sq_to_bb(sq + 9)) != 0 do return true
 		}
 	}
 
 	// 4. Sliding piece attacks (using magic bitboard lookups)
-	occupied := position.white.AllPieces | position.black.AllPieces
+	occupied := all_occupied(position)
 
 	// Bishops and Queens
 	bishop_attacks := get_bishop_moves(sq, occupied)
-	if (bishop_attacks & (opp_pos.Bishops | opp_pos.Queens)) != 0 do return true
+	if (bishop_attacks & (opp_bb[.Bishop] | opp_bb[.Queen])) != 0 do return true
 
 	// Rooks and Queens
 	rook_attacks := get_rook_moves(sq, occupied)
-	if (rook_attacks & (opp_pos.Rooks | opp_pos.Queens)) != 0 do return true
+	if (rook_attacks & (opp_bb[.Rook] | opp_bb[.Queen])) != 0 do return true
 
 	return false
 }
 
 // To determine check, see whether the king's square is attacked by a piece of the opposing color
 is_in_check :: proc(color: Color, position: ^GamePosition) -> bool {
-	king_bb := color == .White ? position.white.King : position.black.King
+	king_bb := position.bb[color][.King]
 
 	// Handle custom setups with no king (e.q. tests)
 	if king_bb == 0 do return false
 
 	king_sq := bits.count_trailing_zeros(u64(king_bb))
 
-	opp_color := color == .White ? Color.Black : Color.White
-
-	return is_square_attacked(int(king_sq), opp_color, position)
+	return is_square_attacked(int(king_sq), opp_color(color), position)
 }
 
 add_move_to_list :: proc(ml: ^MoveList, m: Move) {
@@ -526,201 +496,85 @@ bb_to_pawn_moves :: proc(
 	}
 }
 
-/*
-apply_move :: proc(move: Move, position_in: GamePosition) -> (GamePosition, MoveInfo) {
-
-	position_out := position_in
-	info := apply_move_inplace(move, &position_out)
-
-	return position_out, info
-}
-*/
-
 //In place modifications are probably faster since memory doesn't
 //need to be allocated
 apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
-
-	sq_bb_init: BitBoard = BitBoard(1) << uint(move.pos_init)
-	sq_bb_final: BitBoard = BitBoard(1) << uint(move.pos_final)
+	us := move.piece.color
 
 	info: MoveInfo
 	info.castling = position.castling
 	info.en_passant = position.en_passant
 	info.halfmove = position.halfmove
+	info.hash = position.hash
 
-	my_pos, opp_pos: ^PositionOneColor
-	opp_color: Color
-	switch move.piece.color {
-	case .White:
-		my_pos = &position.white
-		opp_pos = &position.black
-		opp_color = .Black
-		position.turn = .Black
-	case .Black:
-		my_pos = &position.black
-		opp_pos = &position.white
-		opp_color = .White
-		position.turn = .White
-		position.movenum += 1
-	}
+	position.turn = opp_color(us)
+	if us == .Black do position.movenum += 1
+	position.hash ~= zobrist.side
 
 	// En passant is only valid on the move immediately after a double push
+	if position.en_passant != -1 {
+		// Remove the previous en_passant file
+		position.hash ~= zobrist.ep_file[position.en_passant % 8]
+	}
 	position.en_passant = -1
+	position.halfmove += 1
 
-	// En passant capture: a pawn moving diagonally to a square that is not
-	// occupied by an enemy piece
-	is_en_passant := false
-	if move.piece.piecetype == .Pawn && (sq_bb_final & opp_pos.AllPieces) == 0 {
-		_, file_init := sq_to_rank_file(move.pos_init)
-		_, file_final := sq_to_rank_file(move.pos_final)
-		is_en_passant = file_init != file_final
-	}
-
-	switch move.piece.piecetype {
-	case .Pawn:
-		position.halfmove = 0
-		my_pos.Pawns &~= sq_bb_init
-		if move.promotion != .Pawn {
-			#partial switch move.promotion {
-			case .Queen:
-				my_pos.Queens |= sq_bb_final
-			case .Rook:
-				my_pos.Rooks |= sq_bb_final
-			case .Bishop:
-				my_pos.Bishops |= sq_bb_final
-			case .Knight:
-				my_pos.Knights |= sq_bb_final
-			case:
-				panic("Invalid promotion piece in move")
-			}
-		} else {
-			my_pos.Pawns |= sq_bb_final
-			// Check for en passant square
-			if abs(move.pos_final - move.pos_init) == 16 {
-				switch move.piece.color {
-				case .White:
-					position.en_passant = move.pos_init + 8
-				case .Black:
-					position.en_passant = move.pos_init - 8
-				}
-			}
-		}
-	case .Knight:
-		position.halfmove += 1
-		my_pos.Knights &~= sq_bb_init
-		my_pos.Knights |= sq_bb_final
-	case .Bishop:
-		position.halfmove += 1
-		my_pos.Bishops &~= sq_bb_init
-		my_pos.Bishops |= sq_bb_final
-	case .Rook:
-		position.halfmove += 1
-		my_pos.Rooks &~= sq_bb_init
-		my_pos.Rooks |= sq_bb_final
-	case .Queen:
-		position.halfmove += 1
-		my_pos.Queens &~= sq_bb_init
-		my_pos.Queens |= sq_bb_final
-	case .King:
-		position.halfmove += 1
-		my_pos.King &~= sq_bb_init
-		my_pos.King |= sq_bb_final
-	case .All:
-		panic("Shouldn't have piece type as .All in move")
-	}
-	my_pos.AllPieces &~= sq_bb_init
-	my_pos.AllPieces |= sq_bb_final
-
-	// Castling: the king moving two files also moves the rook
-	if move.piece.piecetype == .King && abs(move.pos_final - move.pos_init) == 2 {
-		rook_from, rook_to: int
-		if move.pos_final > move.pos_init {
-			rook_from = move.pos_final + 1
-			rook_to = move.pos_final - 1
-		} else {
-			rook_from = move.pos_final - 2
-			rook_to = move.pos_final + 1
-		}
-		rook_from_bb := sq_to_bb(rook_from)
-		rook_to_bb := sq_to_bb(rook_to)
-		my_pos.Rooks &~= rook_from_bb
-		my_pos.Rooks |= rook_to_bb
-		my_pos.AllPieces &~= rook_from_bb
-		my_pos.AllPieces |= rook_to_bb
-
-		info.is_castle = true
-	
-		// Update piece location evaluation for rook
-		piece_rook : Piece = {.Rook, move.piece.color}
-		position.psqt_mid[move.piece.color] -= psqt_value_mid(piece_rook, rook_from)
-		position.psqt_mid[move.piece.color] += psqt_value_mid(piece_rook, rook_to)
-		position.psqt_end[move.piece.color] -= psqt_value_end(piece_rook, rook_from)
-		position.psqt_end[move.piece.color] += psqt_value_end(piece_rook, rook_to)
+	// En passant capture: a pawn moving diagonally to an empty square
+	capture_sq := move.pos_final
+	if move.piece.piecetype == .Pawn && position.board[move.pos_final] == nil &&
+	   move.pos_init % 8 != move.pos_final % 8 {
+		info.is_en_passant = true
+		capture_sq = ep_captured_square(move)
 	}
 
 	// Remove any captured piece
-	if is_en_passant {
-		position.halfmove = 0
-		// ep_capture_bb := sq_to_bb(move.pos_final + (move.piece.color == .White ? -8 : 8))
-		ep_capture_bb := sq_to_bb(ep_captured_square(move))
-		opp_pos.Pawns &~= ep_capture_bb
-		opp_pos.AllPieces &~= ep_capture_bb
-		info.is_capture = true
-		info.is_en_passant = true
-		info.capture = {.Pawn, opp_color}
-	} else if (sq_bb_final & opp_pos.AllPieces) != 0 {
+	if position.board[capture_sq] != nil {
 		position.halfmove = 0
 		info.is_capture = true
-		if sq_bb_final & opp_pos.Pawns != 0 {
-			opp_pos.Pawns &~= sq_bb_final
-			info.capture = {.Pawn, opp_color}
-		} else if sq_bb_final & opp_pos.Knights != 0 {
-			opp_pos.Knights &~= sq_bb_final
-			info.capture = {.Knight, opp_color}
-		} else if sq_bb_final & opp_pos.Bishops != 0 {
-			opp_pos.Bishops &~= sq_bb_final
-			info.capture = {.Bishop, opp_color}
-		} else if sq_bb_final & opp_pos.Rooks != 0 {
-			opp_pos.Rooks &~= sq_bb_final
-			info.capture = {.Rook, opp_color}
-		} else if sq_bb_final & opp_pos.Queens != 0 {
-			opp_pos.Queens &~= sq_bb_final
-			info.capture = {.Queen, opp_color}
-		}
-		opp_pos.AllPieces &~= sq_bb_final
-	}
-
-	// Revoke castling rights for the squares touched by this move
-	position.castling -= castle_rights_mask(move.pos_init)
-	position.castling -= castle_rights_mask(move.pos_final)
-
-	// Update material information and piece square table info due to move
-	// Castling update done in castling move code as it requires calculation of rook_from/rook_to
-	if info.is_capture {
-		captured_type := info.capture.piecetype
-		position.material[opp_color] -= PIECE_VALUE[captured_type]
-		position.phase -= PHASE_WEIGHT[captured_type]
-		
-		sq := info.is_en_passant ? ep_captured_square(move) : move.pos_final
-		position.psqt_mid[opp_color] -= psqt_value_mid(info.capture, sq)
-		position.psqt_end[opp_color] -= psqt_value_end(info.capture, sq)
+		info.capture = remove_piece(position, capture_sq)
 	}
 
 	if move.promotion != .Pawn {
-		position.phase += PHASE_WEIGHT[move.promotion]
-		prom_piece : Piece = {move.promotion, move.piece.color}
-		position.psqt_mid[move.piece.color] += psqt_value_mid(prom_piece, move.pos_final)
-		position.psqt_end[move.piece.color] += psqt_value_end(prom_piece, move.pos_final)
-		position.material[move.piece.color] += PIECE_VALUE[move.promotion] - PIECE_VALUE[.Pawn]
+		remove_piece(position, move.pos_init)
+		put_piece(position, Piece{move.promotion, us}, move.pos_final)
+	} else {
+		move_piece(position, move.pos_init, move.pos_final)
 	}
-		
-	// Update location information for move
-	position.psqt_mid[move.piece.color] -= psqt_value_mid(move.piece, move.pos_init)
-	position.psqt_mid[move.piece.color] += psqt_value_mid(move.piece, move.pos_final)
-	position.psqt_end[move.piece.color] -= psqt_value_end(move.piece, move.pos_init)
-	position.psqt_end[move.piece.color] += psqt_value_end(move.piece, move.pos_final)
+
+	if move.piece.piecetype == .Pawn {
+		position.halfmove = 0
+		// Double push makes the skipped square available for en passant
+		if abs(move.pos_final - move.pos_init) == 16 {
+			position.en_passant = (move.pos_init + move.pos_final) / 2
+			position.hash ~= zobrist.ep_file[position.en_passant % 8]
+		}
+	}
+
+	// Castling: the king moving two files also moves the rook
+	if move.piece.piecetype == .King && abs(move.pos_final - move.pos_init) == 2 {
+		rook_from, rook_to := castle_rook_squares(move)
+		move_piece(position, rook_from, rook_to)
+		info.is_castle = true
+	}
+
+	// Revoke castling rights for the squares touched by this move
+	old_rights := position.castling
+	position.castling -= castle_rights_mask(move.pos_init)
+	position.castling -= castle_rights_mask(move.pos_final)
+	changed := old_rights - position.castling
+	for right in Castling {
+		if right in changed do position.hash ~= zobrist.castle[right]
+	}
 
 	return info
+}
+
+// Rook origin and destination squares for a castling king move
+castle_rook_squares :: proc(move: Move) -> (rook_from: int, rook_to: int) {
+	if move.pos_final > move.pos_init {
+		return move.pos_final + 1, move.pos_final - 1
+	}
+	return move.pos_final - 2, move.pos_final + 1
 }
 
 // Init/final position and promotion value are enough to determine
@@ -739,147 +593,38 @@ ep_captured_square :: #force_inline proc(move: Move) -> int {
 }
 
 undo_move_inplace :: proc(move: Move, info: MoveInfo, position: ^GamePosition) {
+	us := move.piece.color
 
-	sq_bb_init: BitBoard = BitBoard(1) << uint(move.pos_init)
-	sq_bb_final: BitBoard = BitBoard(1) << uint(move.pos_final)
-
-	my_pos, opp_pos: ^PositionOneColor
-	opp_color: Color
-	switch move.piece.color {
-	case .White:
-		my_pos = &position.white
-		opp_pos = &position.black
-		position.turn = .White
-		opp_color = .Black
-	case .Black:
-		my_pos = &position.black
-		opp_pos = &position.white
-		position.turn = .Black
-		position.movenum -= 1
-		opp_color = .White
-	}
+	position.turn = us
+	if us == .Black do position.movenum -= 1
 
 	// Restore previous en_passant and castling values
 	position.en_passant = info.en_passant
 	position.castling = info.castling
 	position.halfmove = info.halfmove
 
-	switch move.piece.piecetype {
-	case .Pawn:
-		if move.promotion != .Pawn {
-			#partial switch move.promotion {
-			// Remove the promoted piece, the pawn goes back to its origin square
-			case .Queen:
-				my_pos.Queens &~= sq_bb_final
-			case .Rook:
-				my_pos.Rooks &~= sq_bb_final
-			case .Bishop:
-				my_pos.Bishops &~= sq_bb_final
-			case .Knight:
-				my_pos.Knights &~= sq_bb_final
-			case:
-				panic("Invalid promotion piece in undo")
-			}
-		} else {
-			my_pos.Pawns &~= sq_bb_final
-		}
-		my_pos.Pawns |= sq_bb_init
-	case .Knight:
-		my_pos.Knights &~= sq_bb_final
-		my_pos.Knights |= sq_bb_init
-	case .Bishop:
-		my_pos.Bishops &~= sq_bb_final
-		my_pos.Bishops |= sq_bb_init
-	case .Rook:
-		my_pos.Rooks &~= sq_bb_final
-		my_pos.Rooks |= sq_bb_init
-	case .Queen:
-		my_pos.Queens &~= sq_bb_final
-		my_pos.Queens |= sq_bb_init
-	case .King:
-		my_pos.King &~= sq_bb_final
-		my_pos.King |= sq_bb_init
-	case .All:
-		panic("Shouldn't have piece type as .All in move")
-	}
-	my_pos.AllPieces &~= sq_bb_final
-	my_pos.AllPieces |= sq_bb_init
-
 	// Castling: move the rook back
-	if move.piece.piecetype == .King && abs(move.pos_final - move.pos_init) == 2 {
-		rook_from, rook_to: int
-		if move.pos_final > move.pos_init {
-			rook_from = move.pos_final + 1
-			rook_to = move.pos_final - 1
-		} else {
-			rook_from = move.pos_final - 2
-			rook_to = move.pos_final + 1
-		}
-		rook_from_bb := sq_to_bb(rook_from)
-		rook_to_bb := sq_to_bb(rook_to)
-		my_pos.Rooks &~= rook_to_bb
-		my_pos.Rooks |= rook_from_bb
-		my_pos.AllPieces &~= rook_to_bb
-		my_pos.AllPieces |= rook_from_bb
-		
-		// Update piece location evaluation for rook
-		piece_rook : Piece = {.Rook, move.piece.color}
-		position.psqt_mid[move.piece.color] += psqt_value_mid(piece_rook, rook_from)
-		position.psqt_mid[move.piece.color] -= psqt_value_mid(piece_rook, rook_to)
-		position.psqt_end[move.piece.color] += psqt_value_end(piece_rook, rook_from)
-		position.psqt_end[move.piece.color] -= psqt_value_end(piece_rook, rook_to)
+	if info.is_castle {
+		rook_from, rook_to := castle_rook_squares(move)
+		move_piece(position, rook_to, rook_from)
 	}
 
-	if info.is_en_passant {
-		// The captured pawn sits next to pos_final, not on it
-		ep_capture_bb := sq_to_bb(move.pos_final + (move.piece.color == .White ? -8 : 8))
-		opp_pos.Pawns |= ep_capture_bb
-		opp_pos.AllPieces |= ep_capture_bb
-	} else if info.is_capture {
-		switch info.capture.piecetype {
-		case .Pawn:
-			opp_pos.Pawns |= sq_bb_final
-		case .Knight:
-			opp_pos.Knights |= sq_bb_final
-		case .Bishop:
-			opp_pos.Bishops |= sq_bb_final
-		case .Rook:
-			opp_pos.Rooks |= sq_bb_final
-		case .Queen:
-			opp_pos.Queens |= sq_bb_final
-		case .King:
-			opp_pos.King |= sq_bb_final
-		case .All:
-			panic("Should have piece type as .All in move")
-		}
-		opp_pos.AllPieces |= sq_bb_final
-	}
-
-	// Update material and position evaluation
-	if info.is_capture {
-		captured_type := info.capture.piecetype
-		position.material[opp_color] += PIECE_VALUE[captured_type]
-		position.phase += PHASE_WEIGHT[captured_type]
-		
-		sq := info.is_en_passant ? ep_captured_square(move) : move.pos_final
-		position.psqt_mid[opp_color] += psqt_value_mid(info.capture, sq)
-		position.psqt_end[opp_color] += psqt_value_end(info.capture, sq)
-	}
-	
+	// Remove the promoted piece, the pawn goes back to its origin square
 	if move.promotion != .Pawn {
-		position.phase -= PHASE_WEIGHT[move.promotion]
-		prom_piece : Piece = {move.promotion, move.piece.color}
-		position.psqt_mid[move.piece.color] -= psqt_value_mid(prom_piece, move.pos_final)
-		position.psqt_end[move.piece.color] -= psqt_value_end(prom_piece, move.pos_final)
-		position.material[move.piece.color] += PIECE_VALUE[.Pawn] - PIECE_VALUE[move.promotion]
+		remove_piece(position, move.pos_final)
+		put_piece(position, move.piece, move.pos_init)
+	} else {
+		move_piece(position, move.pos_final, move.pos_init)
 	}
-	
-	// Update location information for move
-	position.psqt_mid[move.piece.color] += psqt_value_mid(move.piece, move.pos_init)
-	position.psqt_mid[move.piece.color] -= psqt_value_mid(move.piece, move.pos_final)
-	position.psqt_end[move.piece.color] += psqt_value_end(move.piece, move.pos_init)
-	position.psqt_end[move.piece.color] -= psqt_value_end(move.piece, move.pos_final)
 
+	// The en passant captured pawn sits next to pos_final, not on it
+	if info.is_capture {
+		capture_sq := info.is_en_passant ? ep_captured_square(move) : move.pos_final
+		put_piece(position, info.capture, capture_sq)
+	}
+
+	// Restore hash last because put_piece/move_piece updates it
+	position.hash = info.hash
 }
 
 opp_color :: #force_inline proc(color: Color) -> Color {
