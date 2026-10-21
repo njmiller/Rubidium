@@ -1,5 +1,6 @@
 package main
 
+import "core:bufio"
 import "core:fmt"
 import "core:log"
 import "core:flags"
@@ -119,15 +120,26 @@ process_fen :: proc(fen: string) -> GamePosition {
 }
 
 run_perft :: proc(fen: string, depth: int) {
-	fmt.println(fen)
-	fmt.println(depth)
-
 	pos := process_fen(fen)
 
 	perft_divide(depth, &pos)
 }
 
 main_uci :: proc() {
+	s: bufio.Scanner
+
+	bufio.scanner_init(&s, os.to_stream(os.stdin))
+	defer bufio.scanner_destroy(&s)
+
+	for bufio.scanner_scan(&s) {
+		line := bufio.scanner_text(&s)
+		do_quit := read_uci_gui(line)
+		if do_quit do break
+
+		// Move this inside handle_position???
+		free_all(context.temp_allocator)
+	}
+
 	return
 }
 

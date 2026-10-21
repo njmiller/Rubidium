@@ -3,6 +3,13 @@ package main
 import "core:fmt"
 import "core:strings"
 
+Engine :: struct {
+	pos: GamePosition,
+	history: History, // hashes of positions before pos
+}
+
+engine: Engine
+
 move_to_uci :: proc(m: Move, buf: ^[5]u8) -> string {
 
 	buf[0] = 'a' + u8(m.pos_init % 8)
@@ -29,13 +36,13 @@ move_to_uci :: proc(m: Move, buf: ^[5]u8) -> string {
 	return string(buf[:n])
 }
 
-read_uci_gui :: proc(input: string) {
+read_uci_gui :: proc(input: string) -> bool {
 	trimmed := strings.trim_space(input)
 	tokens := strings.split(trimmed, " ")
 	defer delete(tokens)
 
 	if len(tokens) == 0 {
-		return
+		return true
 	}
 
 	command := tokens[0]
@@ -55,9 +62,12 @@ read_uci_gui :: proc(input: string) {
 		handle_stop()
 	case "quit":
 		handle_quit()
+		return false
 	case:
 	// Unknown command, ignore silently per UCI spec
 	}
+
+	return true
 }
 
 handle_uci :: proc() {
@@ -72,50 +82,38 @@ handle_isready :: proc() {
 
 handle_ucinewgame :: proc() {
 	// Reset engine state for new game
+	engine.pos = gen_newgame()
+	engine.history.len = 0
 }
 
 handle_position :: proc(args: []string) {
-	if len(args) == 0 {
-		return
+	if len(args) == 0 do return
+
+	idx := 0
+
+	switch args[0] {
+		case "startpos":
+			engine.pos = gen_newgame()
+			idx = 1
+		case "fen" :
+			idx = 1
+			for idx < len(args) && args[idx] != "moves" do idx += 1
+			engine.pos = process_fen(strings.join(args[1:idx], " ", context.temp_allocator))
+		case:
+			return
 	}
+	engine.history.len = 0
 
-	if args[0] == "startpos" {
-		pos := gen_newgame()
-		moves_start := -1
-		for arg, i in args {
-			if arg == "moves" {
-				moves_start = i + 1
-				break
-			}
-		}
+	if idx < len(args) && args[idx] == "moves" do idx += 1
 
-		if moves_start != -1 && moves_start < len(args) {
-			// Apply moves from starting position
-			for i := moves_start; i < len(args); i += 1 {
-				// Apply move args[i]
-			}
-		}
-	} else if args[0] == "fen" {
-		// Parse FEN string - typically the next 6 tokens
-		if len(args) >= 7 {
-			fen_parts := args[1:7]
-			// Parse FEN position
+	for tok in args[idx:] {
+		if engine.history.len >= MAX_GAME_PLY do break
 
-			moves_start := -1
-			for arg, i in args {
-				if arg == "moves" {
-					moves_start = i + 1
-					break
-				}
-			}
+		m := parse_uci_move(&engine.pos, tok)
+		engine.history.keys[engine.history.len] = engine.pos.hash
+		engine.history.len += 1
+		apply_move_inplace(m, &engine.pos)
 
-			if moves_start != -1 && moves_start < len(args) {
-				// Apply moves from FEN position
-				for i := moves_start; i < len(args); i += 1 {
-					// Apply move args[i]
-				}
-			}
-		}
 	}
 }
 
@@ -187,14 +185,24 @@ uci_square_to_index :: proc(square: string) -> int {
 	return rank * 8 + file
 }
 
-process_uci_move :: proc(pos: ^GamePosition, move_str: string) -> Move {
+parse_uci_move :: proc(pos: ^GamePosition, move_str: string) -> Move {
 	pos_init_int := uci_square_to_index(move_str[:2])
-	pos_final_int := uci_square_to_index(move_str[2:])
+	pos_final_int := uci_square_to_index(move_str[2:4])
+
+	promo := PieceType.Pawn
+	if len(move_str) >= 5 {
+		switch move_str[4] {
+			case 'q': promo = .Queen
+			case 'r': promo = .Rook
+			case 'b': promo = .Bishop
+			case 'n': promo = .Knight
+		}
+	}
 
 	// The moving piece comes from the mailbox; a piece on the final square
 	// means the move is a capture
 	piece, _ := piece_at(pos, pos_init_int)
 	_, is_capture := piece_at(pos, pos_final_int)
 
-	return Move{pos_init_int, pos_final_int, piece, is_capture, .Pawn}
+	return Move{pos_init_int, pos_final_int, piece, is_capture, promo}
 }
