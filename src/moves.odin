@@ -4,6 +4,8 @@ import "core:fmt"
 import "core:math/bits"
 import "base:runtime"
 
+CAPTURE_BASE :: 1000
+
 // As minimal of info as possible to construct implement move
 Move :: struct {
 	pos_init:   int,
@@ -28,6 +30,7 @@ MoveInfo :: struct {
 
 MoveList :: struct {
 	moves : [256]Move,
+	scores : [256]int,
 	n : int,
 }
 
@@ -271,7 +274,9 @@ gen_moves :: proc(position: ^GamePosition) -> MoveList {
 	// gen_castle_move(moves, position)
 	gen_castle_move(&move_list, position)
 
-	ncap := partition_captures_first(&move_list)
+	// Assign score values to each move based on MVV-LVA
+	// move ordering
+	mvv_lva(&move_list, position)
 
 	return move_list
 
@@ -318,7 +323,6 @@ gen_castle_move :: proc(move_list: ^MoveList, position: ^GamePosition) {
 		if (occupancy & (sq_to_bb(f_sq) | sq_to_bb(g_sq))) == 0 &&
 		   !is_square_attacked(f_sq, them, position) &&
 		   !is_square_attacked(g_sq, them, position) {
-			// queue.push_back(moves, Move{king_sq, g_sq, Piece{.King, color}, false, .Pawn})
 			add_move_to_list(move_list, Move{king_sq, g_sq, Piece{.King, color}, false, .Pawn})
 		}
 	}
@@ -333,7 +337,6 @@ gen_castle_move :: proc(move_list: ^MoveList, position: ^GamePosition) {
 		if (occupancy & (sq_to_bb(b_sq) | sq_to_bb(c_sq) | sq_to_bb(d_sq))) == 0 &&
 		   !is_square_attacked(d_sq, them, position) &&
 		   !is_square_attacked(c_sq, them, position) {
-			// queue.push_back(moves, Move{king_sq, c_sq, Piece{.King, color}, false, .Pawn})
 			add_move_to_list(move_list, Move{king_sq, c_sq, Piece{.King, color}, false, .Pawn})
 		}
 	}
@@ -395,6 +398,26 @@ is_in_check :: proc(color: Color, position: ^GamePosition) -> bool {
 	return is_square_attacked(int(king_sq), opp_color(color), position)
 }
 
+// If we are in check and we are still in check after all possible generated
+// moves, then it is checkmate
+is_checkmate :: proc(position: ^GamePosition) -> bool {
+
+	color := position.turn
+	if !is_in_check(color, position) do return false
+
+	movelist := gen_moves(position)
+
+	for i in 0..<movelist.n {
+		move := movelist.moves[i]
+		mi := apply_move_inplace(move, position)
+		legal := !is_in_check(color, position)
+		undo_move_inplace(move, mi, position)
+		if legal do return false
+	}
+
+	return true
+}
+
 add_move_to_list :: proc(ml: ^MoveList, m: Move) {
 	ml.moves[ml.n] = m
 	ml.n += 1
@@ -415,8 +438,22 @@ partition_captures_first :: proc(ml: ^MoveList) -> int {
 	return ncap
 }
 
+mvv_lva :: proc(ml: ^MoveList, pos: ^GamePosition) {
+	for i in 0..<ml.n {
+		move := ml.moves[i]
+		if !move.is_capture {
+			ml.scores[i] = 0
+			continue
+		}
+
+		victim := PieceType.Pawn // used if pos_final is empty for ep
+		if p, ok := pos.board[move.pos_final].?; ok do victim = p.piecetype
+
+		ml.scores[i] = CAPTURE_BASE + 10 * int(victim) - int(move.piece.piecetype)
+	}
+}
+
 bb_to_moves :: proc(
-	// moves: ^queue.Queue(Move),
 	move_list: ^MoveList,
 	sq: int,
 	piece: Piece,
@@ -438,7 +475,6 @@ bb_to_moves :: proc(
 		sq_fin = pop_first_bit(&bb_tmp) // + 1
 		move = Move{sq, sq_fin, piece, false, .Pawn}
 		add_move_to_list(move_list, move)
-		// queue.push_back(moves, move)
 	}
 
 	bb_tmp = captures_bb
@@ -473,7 +509,6 @@ bb_to_pawn_moves :: proc(
 				add_move_to_list(move_list, move)
 			}
 		} else {
-			// queue.push_back(moves, Move{sq, sq_fin, piece, false, .Pawn})
 			move := Move{sq, sq_fin, piece, false, .Pawn}
 			add_move_to_list(move_list, move)
 		}
@@ -484,12 +519,10 @@ bb_to_pawn_moves :: proc(
 		sq_fin = pop_first_bit(&bb_tmp)
 		if sq_fin < 8 || sq_fin >= 56 {
 			for promo in promotion_pieces {
-				// queue.push_front(moves, Move{sq, sq_fin, piece, true, promo})
 				move := Move{sq, sq_fin, piece, true, promo}
 				add_move_to_list(move_list, move)
 			}
 		} else {
-			// queue.push_front(moves, Move{sq, sq_fin, piece, true, .Pawn})
 			move := Move{sq, sq_fin, piece, true, .Pawn}
 			add_move_to_list(move_list, move)
 		}

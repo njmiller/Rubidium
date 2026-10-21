@@ -5,9 +5,6 @@ import "core:testing"
 @(test)
 test_knight_moves :: proc(_: ^testing.T) {
 
-	// Initialize knight moves array
-	// init_knight_moves()
-
 	// Check several parts of the array
 	kA1 := C2 | B3
 	kD3 := E5 | E1 | F2 | F4 | C5 | C1 | B2 | B4
@@ -19,12 +16,6 @@ test_knight_moves :: proc(_: ^testing.T) {
 	assert(knight_moves[idx_F5] == kF5)
 	assert(knight_moves[idx_C7] == kC7)
 }
-
-// @(test)
-// test_magic_moves :: proc(t: ^testing.T) {
-	// test_bishop_moves(t)
-	// test_rook_moves(t)
-// }
 
 @(test)
 test_bishop_moves :: proc(_: ^testing.T) {

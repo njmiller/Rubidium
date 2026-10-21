@@ -1,15 +1,73 @@
 package main
 
+import "core:fmt"
+import "core:thread"
+
 INF :: 32000
 MATE :: 31000
 MAX_PLY :: 128
+MAX_GAME_PLY :: 1024
+
+stop_flag : bool
+
+SearchState :: struct {
+	nodes : int,
+	history : History,
+}
+
+History :: struct {
+	keys: [MAX_GAME_PLY + MAX_PLY]u64,
+	len: int,
+}
+
+is_repetition :: proc(h: ^History, key: u64, halfmove: int) -> bool {
+	// Only need to check positions since the last capture/pawn move
+	// and only with the same side to move (step back 2 plies at a time
+
+	// Only check one repetition. If we repeat once, we will probably
+	// repeat again
+	start := max(0, h.len - halfmove)
+	for i := h.len - 2; i >= start; i -= 2 {
+		if h.keys[i] == key do return true
+	}
+	return false
+}
 
 is_mate_score :: #force_inline proc(s: int) -> bool {
 	return abs(s) > MATE - MAX_PLY
 }
 
-nega_max :: proc(depth: int, pos: ^GamePosition, alpha: int, beta: int) -> int {
-	if depth == 0 do return eval_position(pos)
+// Iterates over move list from start to end and finds one with highest
+// score. Swaps it with move in start position so next time we can start at
+// start+1
+pick_next_move :: proc(ml: ^MoveList, start: int) -> Move {
+	best := start
+	for i in start+1..<ml.n {
+		if ml.scores[i] > ml.scores[best] do best = i
+	}
+	ml.moves[start], ml.moves[best] = ml.moves[best], ml.moves[start]
+	ml.scores[start], ml.scores[best] = ml.scores[best], ml.scores[start]
+
+	return ml.moves[start]
+}
+
+negamax :: proc(s: ^SearchState, pos: ^GamePosition, depth, ply, alpha, beta: int) -> int {
+	s.nodes += 1
+
+	if stop_flag do return 0
+
+	if ply > 0 {
+		// Draw by 50-move rule or repetition
+		if pos.halfmove >= 100 || is_repetition(&s.history, pos.hash, pos.halfmove) do return 0
+	}
+
+	// Adding hash key to history
+	s.history.keys[s.history.len] = pos.hash
+	s.history.len += 1
+	defer s.history.len -= 1
+
+	if depth == 0 do return quiesce(s, pos, ply, alpha, beta)
+	if ply >= MAX_PLY do return eval_position(pos)
 
 	score : int
 	alpha := alpha
@@ -18,13 +76,18 @@ nega_max :: proc(depth: int, pos: ^GamePosition, alpha: int, beta: int) -> int {
 
 	all_moves := gen_moves(pos)
 
+	legal_moves := 0
 	for i in 0..<all_moves.n {
-		move := all_moves.moves[i]
+		move := pick_next_move(&all_moves, i)
+
 		mi := apply_move_inplace(move, pos)
 
 		if !is_in_check(move.piece.color, pos) {
-			score = -nega_max(depth-1, pos, -beta, -alpha)
+			legal_moves += 1
+
+			score = -negamax(s, pos, depth-1, ply+1, -beta, -alpha)
 			if score > maxscore do maxscore = score
+			// maxscore = max(maxscore, score)
 
 			alpha = max(alpha, score)
 		}
@@ -34,5 +97,129 @@ nega_max :: proc(depth: int, pos: ^GamePosition, alpha: int, beta: int) -> int {
 
 	}
 
+	if legal_moves == 0 {
+		// Checkmate if we are in check, otherwise it is stalemate
+		return is_in_check(pos.turn, pos) ? -(MATE - ply) : 0
+	}
+
 	return maxscore
+}
+
+quiesce :: proc(s: ^SearchState, pos: ^GamePosition, ply, alpha, beta: int) -> int {
+	s.nodes += 1
+	static_eval := eval_position(pos)
+
+	if ply >= MAX_PLY do return static_eval
+
+	best_val := static_eval
+
+	alpha := alpha
+
+	if best_val >= beta do return best_val
+
+	if best_val >= alpha do alpha = best_val
+
+	ml := gen_moves(pos)
+
+	for i in 0..<ml.n {
+		move := pick_next_move(&ml, i)
+
+		if !move.is_capture do break
+
+		mi := apply_move_inplace(move, pos)
+
+		if is_in_check(move.piece.color, pos) {
+			undo_move_inplace(move, mi, pos)
+			continue
+		}
+
+		score := -quiesce(s, pos, ply+1, -beta, -alpha)
+
+		undo_move_inplace(move, mi, pos)
+
+		if score >= beta do return score
+		if score > best_val do best_val = score
+		if score > alpha do alpha = score
+	}
+
+	return best_val
+}
+
+search_root :: proc(s: ^SearchState, pos: ^GamePosition, depth: int, prev_best: Move) -> (best_move: Move, best_score: int) {
+	s.nodes += 1
+
+	alpha := -INF
+	beta := INF
+	best_score = -INF
+	best_move = NULL_MOVE
+
+	// Push the root hash so repetitions found deepr in the tree see it
+	s.history.keys[s.history.len] = pos.hash
+	s.history.len += 1
+	defer s.history.len -= 1
+
+	ml := gen_moves(pos)
+
+	// Search the previous iteration's best move fitst. This makes alpha-beta
+	// cut much more, and it means a partial iteration still search the best move
+	if prev_best != NULL_MOVE {
+		for i in 0..<ml.n {
+			if move_equal(ml.moves[i], prev_best) {
+				ml.scores[i] = max(int)
+				break
+			}
+		}
+	}
+
+	for i in 0..<ml.n {
+		move := pick_next_move(&ml, i)
+
+		mi := apply_move_inplace(move, pos)
+		if is_in_check(move.piece.color, pos) {
+			undo_move_inplace(move, mi, pos)
+			continue
+		}
+
+		score := -negamax(s, pos, depth-1, 1, -beta, -alpha)
+		undo_move_inplace(move, mi, pos)
+
+		if stop_flag do break
+
+		if score > best_score {
+			best_score = score
+			best_move = move
+		}
+
+		if score > alpha do alpha = score
+
+	}
+	
+	// best_move == NULL_MOVE here means no legal moves (checkmate or stalemate)
+	return
+}
+
+search :: proc(pos: ^GamePosition, game_history: ^History, max_depth: int) -> Move {
+	s: SearchState
+	s.history = game_history^
+	stop_flag = false
+
+	best_move := NULL_MOVE
+	for depth in 1..=max_depth {
+		move, score := search_root(&s, pos, depth, best_move)
+
+		// Don't trust a partial iteration. Kepp the last completed one
+		// (unless we have nothing yet)
+		if stop_flag && best_move != NULL_MOVE do break
+		if move != NULL_MOVE do best_move = move
+
+		buf: [5]u8
+		fmt.printf("info depth %d score cp %d nodes %d pv %s\n",
+			depth, score, s.nodes, move_to_uci(best_move, &buf))
+
+		if stop_flag || is_mate_score(score) do break
+
+	}
+
+	return best_move
+
 }
