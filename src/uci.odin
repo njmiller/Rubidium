@@ -52,6 +52,8 @@ search_worker :: proc(job: ^SearchJob) {
 
 move_to_uci :: proc(m: Move, buf: ^[5]u8) -> string {
 
+	if m == NULL_MOVE do return string("0000")
+
 	buf[0] = 'a' + u8(m.pos_init % 8)
 	buf[1] = '1' + u8(m.pos_init / 8)
 
@@ -151,6 +153,8 @@ handle_position :: proc(args: []string) {
 	if idx < len(args) && args[idx] == "moves" do idx += 1
 
 	for tok in args[idx:] {
+		if len(tok) < 4 do break
+
 		if engine.history.len >= MAX_GAME_PLY do break
 
 		m := parse_uci_move(&engine.pos, tok)
@@ -179,9 +183,11 @@ handle_go :: proc(args: []string) {
 		case "wtime":
 			// Parse white time in milliseconds
 			wtime = next_int(args, &i, 0)
+			has_clock = true
 		case "btime":
 			// Parse black time in milliseconds  
 			btime = next_int(args, &i, 0)
+			has_clock = true
 		case "winc":
 			// Parse white increment
 			winc = next_int(args, &i, 0)
@@ -217,12 +223,9 @@ handle_go :: proc(args: []string) {
 		case has_clock:
 			limits.time_budget = time_budget(my_time, my_inc, movestogo)
 	}
-	// Start search with parsed parameters
-	// This should run in a separate thread
-	start_search(limits)
 
-	best_move := "e2e4" // Placeholder
-	fmt.printf("bestmove %s\n", best_move)
+	// Start the search with the parsed limits
+	start_search(limits)
 }
 
 handle_stop :: proc() {

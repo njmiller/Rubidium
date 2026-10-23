@@ -114,7 +114,6 @@ init_king_moves :: proc() {
 //Use computation to determine slider moves
 init_slider_move :: proc(sq: int, occupied: BitBoard, is_rook: bool) -> BitBoard {
 	rank, file, rank_i, file_i: int
-	i: int
 	output: BitBoard = 0
 	bb_tmp: BitBoard
 
@@ -672,8 +671,6 @@ perft :: proc(depth: int, position: ^GamePosition, stats: ^PerftStats) {
 		stats.nodes += 1
 		return
 	}
-
-	nodes: u64 = 0
 
 	move_list := gen_moves(position)
 

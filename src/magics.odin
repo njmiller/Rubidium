@@ -347,7 +347,7 @@ init_bishop_magic :: proc(sq: int) {
 	count: int = 1 << uint(shift)
 	attacks: queue.Queue(BitBoard)
 	permutations: queue.Queue(BitBoard)
-	occ: BitBoard
+	// occ: BitBoard
 	permutation, attack: BitBoard
 
 	queue.init(&permutations)
@@ -375,7 +375,7 @@ init_rook_magic :: proc(sq: int) {
 	count: int = 1 << uint(shift)
 	attacks: queue.Queue(BitBoard)
 	permutations: queue.Queue(BitBoard)
-	occ: BitBoard
+	// occ: BitBoard
 	permutation, attack: BitBoard
 
 	queue.init(&permutations)
@@ -425,7 +425,7 @@ update_magic_table :: proc(
 get_permutation :: proc(mask: BitBoard, index: BitBoard) -> BitBoard {
 
 	mask_tmp: BitBoard = mask
-	index_tmp: BitBoard = index
+	// index_tmp: BitBoard = index
 	output: BitBoard = 0
 
 	for mask_tmp != 0 {
@@ -486,11 +486,11 @@ pop_first_bit :: #force_inline proc(bb: ^BitBoard) -> int {
 }
 
 index_to_bb :: proc(index: int, bits: int, m: BitBoard) -> BitBoard {
-	i, j: int
+	// i, j: int
 	mp: BitBoard = m
 	result: BitBoard = 0
 	for i in 0 ..< bits {
-		j = pop_first_bit(&mp)
+		j := pop_first_bit(&mp)
 		if (index & (1 << u64(i)) != 0) {
 			result = result | (1 << u64(j))
 		}
@@ -613,16 +613,14 @@ find_magic :: proc(sq : int, m : int, bishop : bool) -> BitBoard {
 */
 
 find_magic :: proc(sq: int, m: int, bishop: bool) -> u64 {
-	mask: BitBoard
 	magic: u64
 	b, a, used: [4096]BitBoard
-	nperm: int
-	j, n, i: int
+	i2: int
 	fail: bool
 
-	mask = bishop ? get_bishop_mask(sq) : get_rook_mask(sq)
-	n = bishop ? magic_bishop_shifts[sq] : magic_rook_shifts[sq]
-	nperm = int(1 << uint(n))
+	mask := bishop ? get_bishop_mask(sq) : get_rook_mask(sq)
+	n := bishop ? magic_bishop_shifts[sq] : magic_rook_shifts[sq]
+	nperm := int(1 << uint(n))
 
 
 	//Loop over all permutations for this square and calculate the moves for each
@@ -637,15 +635,15 @@ find_magic :: proc(sq: int, m: int, bishop: bool) -> u64 {
 	//then it is not a valid magic number)
 	//If it is not valid, try again. We keep trying until we find a valid magic number.
 	//The limit on the number of tries is large enough so that we should always find a magic number
-	for k in 0 ..< 100000000 {
+	for _ in 0 ..< 100000000 {
 		magic = random_u64_fewbits()
 		//if (count_ones_u64((u64(mask) * magic) & 0xFF00000000000000) < 6) do continue
 		if (bits.count_ones((u64(mask) * magic) & 0xFF00000000000000) < 6) do continue
 		for i in 0 ..< 4096 do used[i] = 0
-		for i, fail = 0, false; !fail && i < nperm; i = i + 1 {
-			j = transform(b[i], magic, m)
-			if (used[j] == 0) do used[j] = a[i]
-			else if (used[j] != a[i]) do fail = true
+		for i2, fail = 0, false; !fail && i2 < nperm; i2 = i2 + 1 {
+			j := transform(b[i2], magic, m)
+			if (used[j] == 0) do used[j] = a[i2]
+			else if (used[j] != a[i2]) do fail = true
 		}
 		if !fail do return magic
 	}
@@ -653,20 +651,16 @@ find_magic :: proc(sq: int, m: int, bishop: bool) -> u64 {
 	return 0
 }
 
-generate_magics :: proc() {
-	square: int
-	magic_val: BitBoard
-	magic_val2: u64
-
+generate_magics :: proc() {	
 	fmt.println("RMagic = ")
 	for square in 0 ..< 64 {
-		magic_val2 = find_magic(square, magic_rook_shifts[square], false)
+		magic_val2 := find_magic(square, magic_rook_shifts[square], false)
 		fmt.println(square, ": ", magic_val2)
 	}
 
 	fmt.println("BMagic = ")
 	for square in 0 ..< 64 {
-		magic_val2 = find_magic(square, magic_bishop_shifts[square], true)
+		magic_val2 := find_magic(square, magic_bishop_shifts[square], true)
 		fmt.println(square, ": ", magic_val2)
 	}
 }

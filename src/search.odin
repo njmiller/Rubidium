@@ -23,6 +23,8 @@ SearchLimits :: struct {
 SearchState :: struct {
 	nodes : int,
 	history : History,
+	start: time.Tick,
+	limits: SearchLimits,
 }
 
 History :: struct {
@@ -30,6 +32,14 @@ History :: struct {
 	len: int,
 }
 
+check_limits :: proc(s: ^SearchState) {
+	if s.nodes & 2047 != 0 do return
+
+	over_time := s.limits.time_budget > 0 && time.tick_since(s.start) >= s.limits.time_budget
+	over_nodes := s.limits.nodes > 0 && s.nodes >= s.limits.nodes
+
+	if over_time || over_nodes do sync.atomic_store_explicit(&stop_flag, true, .Relaxed)
+}
 time_budget :: proc(time_left_ms, inc_ms, movestogo: int) -> time.Duration {
 	left := time.Duration(max(time_left_ms, 0)) * time.Millisecond
 	inc := time.Duration(max(inc_ms, 0)) * time.Millisecond
@@ -78,6 +88,7 @@ pick_next_move :: proc(ml: ^MoveList, start: int) -> Move {
 
 negamax :: proc(s: ^SearchState, pos: ^GamePosition, depth, ply, alpha, beta: int) -> int {
 	s.nodes += 1
+	check_limits(s)
 
 	if should_stop() do return 0
 
@@ -132,6 +143,10 @@ negamax :: proc(s: ^SearchState, pos: ^GamePosition, depth, ply, alpha, beta: in
 
 quiesce :: proc(s: ^SearchState, pos: ^GamePosition, ply, alpha, beta: int) -> int {
 	s.nodes += 1
+	check_limits(s)
+
+	if should_stop() do return 0
+
 	static_eval := eval_position(pos)
 
 	if ply >= MAX_PLY do return static_eval
@@ -226,11 +241,11 @@ search_root :: proc(s: ^SearchState, pos: ^GamePosition, depth: int, prev_best: 
 search :: proc(pos: ^GamePosition, game_history: ^History, limits: SearchLimits) -> Move {
 	s: SearchState
 	s.history = game_history^
-
-	max_depth := limits.depth
+	s.start = time.tick_now()
+	s.limits = limits
 
 	best_move := NULL_MOVE
-	for depth in 1..=max_depth {
+	for depth in 1..=limits.depth {
 		move, score := search_root(&s, pos, depth, best_move)
 
 		stopped := should_stop()
@@ -239,9 +254,24 @@ search :: proc(pos: ^GamePosition, game_history: ^History, limits: SearchLimits)
 		if stopped && best_move != NULL_MOVE do break
 		if move != NULL_MOVE do best_move = move
 
+		// Calculated time elapsed and nodes per second for info statement
+		elapsed := time.tick_since(s.start)
+		ms := i64(elapsed / time.Millisecond)
+		nps := ms > 0 ? i64(s.nodes) * 1000 / ms : 0
+		
 		buf: [5]u8
-		fmt.printf("info depth %d score cp %d nodes %d pv %s\n",
-			depth, score, s.nodes, move_to_uci(best_move, &buf))
+		if is_mate_score(score) {
+			plies := MATE - abs(score)
+			mate_in := (plies + 1) / 2
+			fmt.printf("info depth %d score mate %d time %d nodes %d nps %d pv %s\n",
+				depth, score > 0 ? mate_in : -mate_in, ms, s.nodes, nps, move_to_uci(best_move, &buf))
+		} else {
+
+			fmt.printf("info depth %d score cp %d time %d nodes %d nps %d pv %s\n",
+				depth, score, ms, s.nodes, nps, move_to_uci(best_move, &buf))
+		}
+
+		if limits.time_budget > 0 && time.tick_since(s.start) > limits.time_budget / 2 do break
 
 		if stopped || is_mate_score(score) do break
 

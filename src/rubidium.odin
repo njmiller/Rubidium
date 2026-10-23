@@ -2,7 +2,6 @@ package main
 
 import "core:bufio"
 import "core:fmt"
-import "core:log"
 import "core:flags"
 import "core:os"
 
@@ -126,6 +125,8 @@ run_perft :: proc(fen: string, depth: int) {
 }
 
 main_uci :: proc() {
+	defer stop_search()
+
 	s: bufio.Scanner
 
 	bufio.scanner_init(&s, os.to_stream(os.stdin))
