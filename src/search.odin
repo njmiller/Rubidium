@@ -1,7 +1,8 @@
 package main
 
 import "core:fmt"
-import "core:thread"
+import "core:sync"
+import "core:time"
 
 INF :: 32000
 MATE :: 31000
@@ -9,6 +10,13 @@ MAX_PLY :: 128
 MAX_GAME_PLY :: 1024
 
 stop_flag : bool
+
+SearchLimits :: struct {
+	depth: int,
+	movetime: time.Duration, // 0 = no limit
+	nodes: int,
+	infinite: bool,
+}
 
 SearchState :: struct {
 	nodes : int,
@@ -18,6 +26,10 @@ SearchState :: struct {
 History :: struct {
 	keys: [MAX_GAME_PLY + MAX_PLY]u64,
 	len: int,
+}
+
+should_stop :: #force_inline proc() -> bool {
+	return sync.atomic_load_explicit(&stop_flag, .Relaxed)
 }
 
 is_repetition :: proc(h: ^History, key: u64, halfmove: int) -> bool {
@@ -54,7 +66,7 @@ pick_next_move :: proc(ml: ^MoveList, start: int) -> Move {
 negamax :: proc(s: ^SearchState, pos: ^GamePosition, depth, ply, alpha, beta: int) -> int {
 	s.nodes += 1
 
-	if stop_flag do return 0
+	if should_stop() do return 0
 
 	if ply > 0 {
 		// Draw by 50-move rule or repetition
@@ -183,7 +195,7 @@ search_root :: proc(s: ^SearchState, pos: ^GamePosition, depth: int, prev_best: 
 		score := -negamax(s, pos, depth-1, 1, -beta, -alpha)
 		undo_move_inplace(move, mi, pos)
 
-		if stop_flag do break
+		if should_stop() do break
 
 		if score > best_score {
 			best_score = score
@@ -198,25 +210,27 @@ search_root :: proc(s: ^SearchState, pos: ^GamePosition, depth: int, prev_best: 
 	return
 }
 
-search :: proc(pos: ^GamePosition, game_history: ^History, max_depth: int) -> Move {
+search :: proc(pos: ^GamePosition, game_history: ^History, limits: SearchLimits) -> Move {
 	s: SearchState
 	s.history = game_history^
-	stop_flag = false
+
+	max_depth := limits.depth
 
 	best_move := NULL_MOVE
 	for depth in 1..=max_depth {
 		move, score := search_root(&s, pos, depth, best_move)
 
+		stopped := should_stop()
 		// Don't trust a partial iteration. Kepp the last completed one
 		// (unless we have nothing yet)
-		if stop_flag && best_move != NULL_MOVE do break
+		if stopped && best_move != NULL_MOVE do break
 		if move != NULL_MOVE do best_move = move
 
 		buf: [5]u8
 		fmt.printf("info depth %d score cp %d nodes %d pv %s\n",
 			depth, score, s.nodes, move_to_uci(best_move, &buf))
 
-		if stop_flag || is_mate_score(score) do break
+		if stopped || is_mate_score(score) do break
 
 	}
 

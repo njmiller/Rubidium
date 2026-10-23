@@ -133,8 +133,7 @@ main_uci :: proc() {
 
 	for bufio.scanner_scan(&s) {
 		line := bufio.scanner_text(&s)
-		do_quit := read_uci_gui(line)
-		if do_quit do break
+		if !read_uci_gui(line) do break
 
 		// Move this inside handle_position???
 		free_all(context.temp_allocator)

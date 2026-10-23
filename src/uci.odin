@@ -1,7 +1,11 @@
 package main
 
+import "base:intrinsics"
 import "core:fmt"
 import "core:strings"
+import "core:sync"
+import "core:thread"
+import "core:time"
 
 Engine :: struct {
 	pos: GamePosition,
@@ -9,6 +13,41 @@ Engine :: struct {
 }
 
 engine: Engine
+
+SearchJob :: struct {
+	pos: GamePosition,
+	history: History,
+	limits: SearchLimits,
+}
+
+job: SearchJob
+search_thread: ^thread.Thread
+
+start_search :: proc(limits: SearchLimits) {
+	stop_search() // don't let two searches run at once
+	job = SearchJob{engine.pos, engine.history, limits}
+	sync.atomic_store_explicit(&stop_flag, false, .Relaxed)
+	search_thread = thread.create_and_start_with_poly_data(&job, search_worker)
+}
+
+stop_search :: proc() {
+	if search_thread == nil do return
+	sync.atomic_store_explicit(&stop_flag, true, .Relaxed)
+	thread.destroy(search_thread) // joins, then frees
+	search_thread = nil
+}
+
+search_worker :: proc(job: ^SearchJob) {
+	best := search(&job.pos, &job.history, job.limits)
+
+	// For "go inifite" (and later "ponder"), don't send bestmove until the GUI says stop
+	if job.limits.infinite {
+		for !sync.atomic_load_explicit(&stop_flag, .Relaxed) do time.sleep(time.Millisecond)
+	}
+
+	buf: [5]u8
+	fmt.printf("bestmove %s\n", move_to_uci(best, &buf))
+}
 
 move_to_uci :: proc(m: Move, buf: ^[5]u8) -> string {
 
@@ -81,12 +120,16 @@ handle_isready :: proc() {
 }
 
 handle_ucinewgame :: proc() {
+	stop_search()
+
 	// Reset engine state for new game
 	engine.pos = gen_newgame()
 	engine.history.len = 0
 }
 
 handle_position :: proc(args: []string) {
+	stop_search()
+
 	if len(args) == 0 do return
 
 	idx := 0
@@ -164,10 +207,12 @@ handle_go :: proc(args: []string) {
 
 handle_stop :: proc() {
 	// Stop current search
+	stop_search()
 }
 
 handle_quit :: proc() {
 	// Clean up and exit
+	stop_search()
 }
 
 uci_square_to_index :: proc(square: string) -> int {
