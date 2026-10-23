@@ -1,7 +1,7 @@
 package main
 
-import "base:intrinsics"
 import "core:fmt"
+import "core:strconv"
 import "core:strings"
 import "core:sync"
 import "core:thread"
@@ -25,6 +25,7 @@ search_thread: ^thread.Thread
 
 start_search :: proc(limits: SearchLimits) {
 	stop_search() // don't let two searches run at once
+
 	job = SearchJob{engine.pos, engine.history, limits}
 	sync.atomic_store_explicit(&stop_flag, false, .Relaxed)
 	search_thread = thread.create_and_start_with_poly_data(&job, search_worker)
@@ -40,7 +41,7 @@ stop_search :: proc() {
 search_worker :: proc(job: ^SearchJob) {
 	best := search(&job.pos, &job.history, job.limits)
 
-	// For "go inifite" (and later "ponder"), don't send bestmove until the GUI says stop
+	// For "go infinite" (and later "ponder"), don't send bestmove until the GUI says stop
 	if job.limits.infinite {
 		for !sync.atomic_load_explicit(&stop_flag, .Relaxed) do time.sleep(time.Millisecond)
 	}
@@ -160,47 +161,66 @@ handle_position :: proc(args: []string) {
 	}
 }
 
+next_int :: proc(args: []string, i: ^int, current: int) -> int {
+	i^ += 1
+	if i^ >= len(args) do return current
+	return strconv.parse_int(args[i^]) or_else current
+}
+
 handle_go :: proc(args: []string) {
 	// Parse search parameters
-	wtime := -1
-	btime := -1
-	winc := 0
-	binc := 0
-	movestogo := 0
-	depth := -1
-	nodes := -1
-	movetime := -1
+	wtime, btime, winc, binc, movestogo, movetime: int
+	has_clock := false
 
-	for i := 0; i < len(args); i += 2 {
-		if i + 1 >= len(args) {
-			break
-		}
+	limits := SearchLimits{depth = MAX_PLY}
 
+	for i := 0; i < len(args); i += 1 {
 		switch args[i] {
 		case "wtime":
-		// Parse white time in milliseconds
+			// Parse white time in milliseconds
+			wtime = next_int(args, &i, 0)
 		case "btime":
-		// Parse black time in milliseconds  
+			// Parse black time in milliseconds  
+			btime = next_int(args, &i, 0)
 		case "winc":
-		// Parse white increment
+			// Parse white increment
+			winc = next_int(args, &i, 0)
 		case "binc":
-		// Parse black increment
+			// Parse black increment
+			binc = next_int(args, &i, 0)
 		case "movestogo":
-		// Parse moves to go
+			// Parse moves to go
+			movestogo = next_int(args, &i, 0)
 		case "depth":
-		// Parse search depth
+			// Parse search depth
+			limits.depth = next_int(args, &i, limits.depth)
 		case "nodes":
-		// Parse node limit
+			// Parse node limit
+			limits.nodes = next_int(args, &i, limits.nodes)
 		case "movetime":
-		// Parse exact search time
+			// Parse exact search time
+			movetime = next_int(args, &i, 0)
 		case "infinite":
 			// Search until stop command
-			i -= 1 // No parameter follows
+			limits.infinite = true
 		}
 	}
 
+	my_time, my_inc := wtime, winc
+	if engine.pos.turn == .Black do my_time, my_inc = btime, binc
+
+	switch {
+		case limits.infinite:
+			// no time limit, wait for stop
+		case movetime > 0:
+			limits.time_budget = max(time.Duration(movetime) * time.Millisecond - MOVE_OVERHEAD, time.Millisecond)
+		case has_clock:
+			limits.time_budget = time_budget(my_time, my_inc, movestogo)
+	}
 	// Start search with parsed parameters
 	// This should run in a separate thread
+	start_search(limits)
+
 	best_move := "e2e4" // Placeholder
 	fmt.printf("bestmove %s\n", best_move)
 }

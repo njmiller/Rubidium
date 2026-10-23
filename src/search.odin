@@ -9,11 +9,13 @@ MATE :: 31000
 MAX_PLY :: 128
 MAX_GAME_PLY :: 1024
 
+MOVE_OVERHEAD :: 30 * time.Millisecond
+
 stop_flag : bool
 
 SearchLimits :: struct {
 	depth: int,
-	movetime: time.Duration, // 0 = no limit
+	time_budget: time.Duration, // 0 = no limit
 	nodes: int,
 	infinite: bool,
 }
@@ -26,6 +28,17 @@ SearchState :: struct {
 History :: struct {
 	keys: [MAX_GAME_PLY + MAX_PLY]u64,
 	len: int,
+}
+
+time_budget :: proc(time_left_ms, inc_ms, movestogo: int) -> time.Duration {
+	left := time.Duration(max(time_left_ms, 0)) * time.Millisecond
+	inc := time.Duration(max(inc_ms, 0)) * time.Millisecond
+	mtg := movestogo > 0 ? movestogo : 30 // sudden death: assume ~30 moves left
+
+	budget := left / time.Duration(mtg) + inc * 3 / 4
+	budget = min(budget, left - MOVE_OVERHEAD) // never plan past the flag
+
+	return max(budget, time.Millisecond)
 }
 
 should_stop :: #force_inline proc() -> bool {
