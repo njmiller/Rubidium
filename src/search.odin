@@ -97,13 +97,14 @@ negamax :: proc(s: ^SearchState, pos: ^GamePosition, depth, ply, alpha, beta: in
 		if pos.halfmove >= 100 || is_repetition(&s.history, pos.hash, pos.halfmove) do return 0
 	}
 
+	if ply >= MAX_PLY do return eval_position(pos)
+
 	// Adding hash key to history
 	s.history.keys[s.history.len] = pos.hash
 	s.history.len += 1
 	defer s.history.len -= 1
 
 	if depth == 0 do return quiesce(s, pos, ply, alpha, beta)
-	if ply >= MAX_PLY do return eval_position(pos)
 
 	score : int
 	alpha := alpha
@@ -223,7 +224,11 @@ search_root :: proc(s: ^SearchState, pos: ^GamePosition, depth: int, prev_best: 
 		score := -negamax(s, pos, depth-1, 1, -beta, -alpha)
 		undo_move_inplace(move, mi, pos)
 
-		if should_stop() do break
+		if should_stop() {
+			// An unfinished search still has to return a legal move
+			if best_move == NULL_MOVE do best_move = move
+			break
+		}
 
 		if score > best_score {
 			best_score = score
@@ -248,10 +253,12 @@ search :: proc(pos: ^GamePosition, game_history: ^History, limits: SearchLimits)
 	for depth in 1..=limits.depth {
 		move, score := search_root(&s, pos, depth, best_move)
 
-		stopped := should_stop()
 		// Don't trust a partial iteration. Kepp the last completed one
 		// (unless we have nothing yet)
-		if stopped && best_move != NULL_MOVE do break
+		if should_stop() {
+			if best_move == NULL_MOVE do best_move = move
+			break
+		}
 		if move != NULL_MOVE do best_move = move
 
 		// Calculated time elapsed and nodes per second for info statement
@@ -273,7 +280,7 @@ search :: proc(pos: ^GamePosition, game_history: ^History, limits: SearchLimits)
 
 		if limits.time_budget > 0 && time.tick_since(s.start) > limits.time_budget / 2 do break
 
-		if stopped || is_mate_score(score) do break
+		if is_mate_score(score) do break
 
 	}
 
