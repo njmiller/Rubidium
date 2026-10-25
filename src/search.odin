@@ -87,6 +87,7 @@ pick_next_move :: proc(ml: ^MoveList, start: int) -> Move {
 	return ml.moves[start]
 }
 
+// https://en.wikipedia.org/wiki/Negamax
 negamax :: proc(s: ^SearchState, pos: ^GamePosition, depth, ply, alpha, beta: int) -> int {
 	s.nodes += 1
 	check_limits(s)
