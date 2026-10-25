@@ -40,6 +40,7 @@ check_limits :: proc(s: ^SearchState) {
 
 	if over_time || over_nodes do sync.atomic_store_explicit(&stop_flag, true, .Relaxed)
 }
+
 time_budget :: proc(time_left_ms, inc_ms, movestogo: int) -> time.Duration {
 	left := time.Duration(max(time_left_ms, 0)) * time.Millisecond
 	inc := time.Duration(max(inc_ms, 0)) * time.Millisecond
@@ -108,11 +109,38 @@ negamax :: proc(s: ^SearchState, pos: ^GamePosition, depth, ply, alpha, beta: in
 
 	score : int
 	alpha := alpha
+	alpha_orig := alpha
+	
+	// Transposition table probe
+	tt_move: u16 = 0
+	if e, hit := tt_probe(pos.hash); hit {
+		tt_move = e.move
+		if ply > 0 && int(e.depth) >= depth {
+			tt_score := score_from_tt(int(e.score), ply)
+			switch e.bound {
+				case .Exact: return tt_score
+				case .Lower: if tt_score >= beta do return tt_score
+				case .Upper: if tt_score <= alpha do return tt_score
+				case .None:
+			}
+		}
+	}
 
-	maxscore := -INF
 
 	all_moves := gen_moves(pos)
 
+	// Search the hash move first
+	if tt_move != 0 {
+		for i in 0..<all_moves.n {
+			if pack_move(all_moves.moves[i]) == tt_move {
+				all_moves.scores[i] = max(int)
+				break
+			}
+		}
+	}
+
+	maxscore := -INF
+	best_move := NULL_MOVE
 	legal_moves := 0
 	for i in 0..<all_moves.n {
 		move := pick_next_move(&all_moves, i)
@@ -123,10 +151,13 @@ negamax :: proc(s: ^SearchState, pos: ^GamePosition, depth, ply, alpha, beta: in
 			legal_moves += 1
 
 			score = -negamax(s, pos, depth-1, ply+1, -beta, -alpha)
-			if score > maxscore do maxscore = score
-			// maxscore = max(maxscore, score)
-
-			alpha = max(alpha, score)
+			if score > maxscore {
+				maxscore = score
+				if score > alpha {
+					alpha = score
+					best_move = move
+				}
+			}
 		}
 		undo_move_inplace(move, mi, pos)
 
@@ -137,6 +168,19 @@ negamax :: proc(s: ^SearchState, pos: ^GamePosition, depth, ply, alpha, beta: in
 	if legal_moves == 0 {
 		// Checkmate if we are in check, otherwise it is stalemate
 		return is_in_check(pos.turn, pos) ? -(MATE - ply) : 0
+	}
+
+	// Transpotion table store
+	if !should_stop() {
+		bound: Bound
+		if maxscore <= alpha_orig {
+			bound = .Upper
+		} else if maxscore >= beta {
+			bound = .Lower
+		} else {
+			bound = .Exact
+		}
+		tt_store(pos.hash, best_move, maxscore, depth, bound, ply)
 	}
 
 	return maxscore

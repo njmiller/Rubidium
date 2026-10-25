@@ -132,6 +132,8 @@ main_uci :: proc() {
 	bufio.scanner_init(&s, os.to_stream(os.stdin))
 	defer bufio.scanner_destroy(&s)
 
+	tt_resize(64)
+
 	for bufio.scanner_scan(&s) {
 		line := bufio.scanner_text(&s)
 		if !read_uci_gui(line) do break

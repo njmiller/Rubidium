@@ -1,3 +1,3 @@
 #!/bin/sh
 
-odin build src -out:rubidium
+odin build src -o:speed -out:rubidium
