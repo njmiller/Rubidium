@@ -231,7 +231,7 @@ get_pawn_moves :: proc(
 gen_moves :: proc(position: ^GamePosition) -> MoveList {
 	// This is better than the separate procedures because we only
 	// have to loop over a single bitboard
-	move_list : MoveList
+	move_list : MoveList = ---
 	move_list.n = 0
 
 	us := position.turn
