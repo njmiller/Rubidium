@@ -112,6 +112,9 @@ assert_eval_consistent :: proc(t: ^testing.T, pos: ^GamePosition, label: string)
 
 	testing.expectf(t, eval_position(pos) == expected,
 		"%s: eval %d != %d from recomputed fields", label, eval_position(pos), expected)
+
+	testing.expectf(t, pos.hash == compute_hash(pos),
+		"%s: hash %d != %d from recomputed hash", label, pos.hash, compute_hash(pos))
 }
 
 @(test)
@@ -349,3 +352,7 @@ test_eval_random_walk_consistency :: proc(t: ^testing.T) {
 			"walk fen %d: undo-all did not restore initial position", fen_idx)
 	}
 }
+
+// test_transposition :: proc(t: ^testing.T) {
+// 
+// }
