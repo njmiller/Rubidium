@@ -3,6 +3,7 @@ package main
 import "core:fmt"
 import "core:sync"
 import "core:time"
+import "core:math"
 
 INF :: 32000
 MATE :: 31000
@@ -15,6 +16,8 @@ MAX_PLY :: 128
 MAX_GAME_PLY :: 1024
 
 MOVE_OVERHEAD :: 30 * time.Millisecond
+
+lmr_table: [64][64]int
 
 stop_flag : bool
 
@@ -37,6 +40,17 @@ SearchState :: struct {
 History :: struct {
 	keys: [MAX_GAME_PLY + MAX_PLY]u64,
 	len: int,
+}
+
+@(init)
+init_lmr :: proc "contextless" () {
+	// Construct a table that determines the late move reduction depth
+	// based on current depth and move's ordered position
+	for d in 1..<64 {
+		for m in 1..<64 {
+			lmr_table[d][m] = int(0.75 + math.ln(f64(d)) * math.ln(f64(m)) / 2.25)
+		}
+	}
 }
 
 check_limits :: proc(s: ^SearchState) {
@@ -155,9 +169,10 @@ negamax :: proc(
 
 	// Null move pruning
 	us := pos.turn
+	in_check := is_in_check(us, pos)
 	has_pieces := (pos.bb[us][.Knight] | pos.bb[us][.Bishop] | pos.bb[us][.Rook] | pos.bb[us][.Queen]) != 0
 
-	if allow_null && depth >= 3 && has_pieces && !is_in_check(us, pos) {
+	if allow_null && depth >= 3 && has_pieces && !in_check {
 		R :: 2
 		ni := apply_null_move(pos)
 		null_score := -negamax(s, pos, depth - 1 - R, ply+1, -beta, -beta+1, false)
@@ -200,10 +215,26 @@ negamax :: proc(
 				// First move: full window
 				score = -negamax(s, pos, depth-1, ply+1, -beta, -alpha)
 			} else {
-				// Later moves: null window to test if they beat alpha
-				score = -negamax(s, pos, depth-1, ply+1, -alpha-1, -alpha)
+				// Late move reductions
+				r := 0
+				is_quiet := !move.is_capture && move.promotion == .Pawn
+				is_killer := all_moves.scores[i] >= KILLER_2 && all_moves.scores[i] < CAPTURE_BASE
+				gives_check := is_in_check(pos.turn, pos) // pos.turn is opponent now
 
-				// It beat alpha but didn't fail high; get its exact score
+				if depth >= 3 && legal_moves >= 4 && is_quiet && !is_killer && !in_check && !gives_check {
+					r = lmr_table[min(depth, 63)][min(legal_moves, 63)]
+					r = clamp(r, 0, depth-2) // always leave at least one dpeth
+				}
+
+				// Reduced depth, null window
+				score = -negamax(s, pos, depth-1-r, ply+1, -alpha-1, -alpha)
+
+				// Reduced search beat alpha: verify at full depth
+				if r > 0 && score > alpha {
+					score = -negamax(s, pos, depth-1, ply+1, -alpha-1, -alpha)
+				}
+
+				// Beat alpha at full dpeth but didn't fail high; get its exact score
 				if score > alpha && score < beta {
 					score = -negamax(s, pos, depth-1, ply+1, -beta, -alpha)
 				}
