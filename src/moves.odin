@@ -36,6 +36,12 @@ MoveList :: struct {
 
 NULL_MOVE :: Move{}
 
+NullMoveInfo :: struct {
+	en_passant: int,
+	halfmove: int,
+	hash: u64,
+}
+
 PerftStats :: struct {
 	nodes:            u64,
 	captures:         u64,
@@ -526,6 +532,30 @@ bb_to_pawn_moves :: proc(
 			add_move_to_list(move_list, move)
 		}
 	}
+}
+
+apply_null_move :: proc(pos: ^GamePosition) -> NullMoveInfo {
+	info := NullMoveInfo{pos.en_passant, pos.halfmove, pos.hash}
+
+	pos.turn = opp_color(pos.turn)
+	pos.hash ~= zobrist.side
+
+	if pos.en_passant != -1 {
+		pos.hash ~= zobrist.ep_file[pos.en_passant % 8]
+		pos.en_passant = -1
+	}
+
+	// No repetition can span a null move, so stop the repetition scan here
+	pos.halfmove = 0
+
+	return info
+}
+
+undo_null_move :: proc(info: NullMoveInfo, pos: ^GamePosition) {
+	pos.turn = opp_color(pos.turn)
+	pos.en_passant = info.en_passant
+	pos.halfmove = info.halfmove
+	pos.hash = info.hash
 }
 
 //In place modifications are probably faster since memory doesn't

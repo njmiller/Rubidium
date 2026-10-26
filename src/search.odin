@@ -106,7 +106,15 @@ update_history :: proc(s: ^SearchState, move: Move, bonus: int) {
 }
 
 // https://en.wikipedia.org/wiki/Negamax
-negamax :: proc(s: ^SearchState, pos: ^GamePosition, depth, ply, alpha, beta: int) -> int {
+negamax :: proc(
+	s: ^SearchState,
+	pos: ^GamePosition,
+	depth: int,
+	ply: int,
+	alpha: int,
+	beta: int,
+	allow_null := true,
+) -> int {
 	s.nodes += 1
 	check_limits(s)
 
@@ -145,6 +153,23 @@ negamax :: proc(s: ^SearchState, pos: ^GamePosition, depth, ply, alpha, beta: in
 		}
 	}
 
+	// Null move pruning
+	us := pos.turn
+	has_pieces := (pos.bb[us][.Knight] | pos.bb[us][.Bishop] | pos.bb[us][.Rook] | pos.bb[us][.Queen]) != 0
+
+	if allow_null && depth >= 3 && has_pieces && !is_in_check(us, pos) {
+		R :: 2
+		ni := apply_null_move(pos)
+		null_score := -negamax(s, pos, depth - 1 - R, ply+2, -beta, -beta+1, false)
+		undo_null_move(ni, pos)
+
+		if should_stop() do return 0
+
+		if null_score >= beta {
+			// Don't return an unproven mate score from a null move search
+			return is_mate_score(null_score) ? beta : null_score
+		}
+	}
 
 	all_moves := gen_moves(pos)
 
