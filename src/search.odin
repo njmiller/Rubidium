@@ -6,8 +6,10 @@ import "core:time"
 
 INF :: 32000
 MATE :: 31000
-KILLER_1 :: 900
-KILLER_2 :: 800
+
+KILLER_1 :: 900_000
+KILLER_2 :: 800_000
+HISTORY_MAX :: 16384
 
 MAX_PLY :: 128
 MAX_GAME_PLY :: 1024
@@ -29,6 +31,7 @@ SearchState :: struct {
 	start: time.Tick,
 	limits: SearchLimits,
 	killers: [MAX_PLY][2]Move,
+	quiet_history: [Color][64][64]int,
 }
 
 History :: struct {
@@ -97,6 +100,11 @@ store_killer :: proc(s: ^SearchState, ply: int, move: Move) {
 	s.killers[ply][0] = move
 }
 
+update_history :: proc(s: ^SearchState, move: Move, bonus: int) {
+	h := &s.quiet_history[move.piece.color][move.pos_init][move.pos_final]
+	h^ += bonus - h^ * abs(bonus) / HISTORY_MAX
+}
+
 // https://en.wikipedia.org/wiki/Negamax
 negamax :: proc(s: ^SearchState, pos: ^GamePosition, depth, ply, alpha, beta: int) -> int {
 	s.nodes += 1
@@ -148,6 +156,7 @@ negamax :: proc(s: ^SearchState, pos: ^GamePosition, depth, ply, alpha, beta: in
 		} else if !m.is_capture {
 			if move_equal(m, s.killers[ply][0]) do all_moves.scores[i] = KILLER_1
 			else if move_equal(m, s.killers[ply][1]) do all_moves.scores[i] = KILLER_2
+			else do all_moves.scores[i] = s.quiet_history[m.piece.color][m.pos_init][m.pos_final]
 		}
 	}
 
@@ -174,7 +183,10 @@ negamax :: proc(s: ^SearchState, pos: ^GamePosition, depth, ply, alpha, beta: in
 		undo_move_inplace(move, mi, pos)
 
 		if alpha >= beta {
-			if !move.is_capture do store_killer(s, ply, move)
+			if !move.is_capture {
+				store_killer(s, ply, move)
+				update_history(s, move, min(depth * depth, HISTORY_MAX))
+			}
 			break
 		}
 

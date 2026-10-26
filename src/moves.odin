@@ -4,7 +4,7 @@ import "core:fmt"
 import "core:math/bits"
 import "base:runtime"
 
-CAPTURE_BASE :: 1000
+CAPTURE_BASE :: 1_000_000
 
 // As minimal of info as possible to construct implement move
 Move :: struct {
