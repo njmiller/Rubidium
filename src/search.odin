@@ -225,7 +225,8 @@ negamax :: proc(
 
 				if depth >= 3 && legal_moves >= 4 && is_quiet && !is_killer && !in_check && !gives_check {
 					r = lmr_table[min(depth, 63)][min(legal_moves, 63)]
-					r = clamp(r, 0, depth-2) // always leave at least one dpeth
+					r -= all_moves.scores[i] / 8192 // reduce less for moves with good history
+					r = clamp(r, 0, depth-2) // always leave at least one depth
 				}
 
 				// Reduced depth, null window
