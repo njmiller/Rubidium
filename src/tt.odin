@@ -11,10 +11,12 @@ TTEntry :: struct {
     score: i16,
     depth: i8,
     bound: Bound,
+    age: u8,
 }
 
 tt: []TTEntry
 tt_mask: u64
+tt_age: u8 // increment at the start of each search
 
 tt_resize :: proc(mb: int) {
     size_tte := size_of(TTEntry)
@@ -45,10 +47,13 @@ tt_probe :: proc(key: u64) -> (^TTEntry, bool) {
 tt_store :: proc(key: u64, move: Move, score: int, depth: int, bound: Bound, ply: int) {
     e := &tt[key & tt_mask]
 
+    // Keep a deeper entry for a different position, unless its from an older search
+    if e.key != key && e.age == tt_age && int(e.depth) > depth do return
+
     packed := pack_move(move)
     if packed == 0 && e.key == key do packed = e.move
 
-    e^= TTEntry{key, packed, i16(score_to_tt(score, ply)), i8(depth), bound}
+    e^= TTEntry{key, packed, i16(score_to_tt(score, ply)), i8(depth), bound, tt_age}
 }
 
 pack_move :: proc(move: Move) -> u16 {

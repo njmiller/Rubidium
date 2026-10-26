@@ -294,6 +294,8 @@ search :: proc(pos: ^GamePosition, game_history: ^History, limits: SearchLimits)
 	s.start = time.tick_now()
 	s.limits = limits
 
+	tt_age += 1
+
 	best_move := NULL_MOVE
 	for depth in 1..=limits.depth {
 		move, score := search_root(&s, pos, depth, best_move)
