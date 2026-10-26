@@ -160,7 +160,7 @@ negamax :: proc(
 	if allow_null && depth >= 3 && has_pieces && !is_in_check(us, pos) {
 		R :: 2
 		ni := apply_null_move(pos)
-		null_score := -negamax(s, pos, depth - 1 - R, ply+2, -beta, -beta+1, false)
+		null_score := -negamax(s, pos, depth - 1 - R, ply+1, -beta, -beta+1, false)
 		undo_null_move(ni, pos)
 
 		if should_stop() do return 0
@@ -196,7 +196,19 @@ negamax :: proc(
 		if !is_in_check(move.piece.color, pos) {
 			legal_moves += 1
 
-			score = -negamax(s, pos, depth-1, ply+1, -beta, -alpha)
+			if legal_moves == 1 {
+				// First move: full window
+				score = -negamax(s, pos, depth-1, ply+1, -beta, -alpha)
+			} else {
+				// Later moves: null window to test if they beat alpha
+				score = -negamax(s, pos, depth-1, ply+1, -alpha-1, -alpha)
+
+				// It beat alpha but didn't fail high; get its exact score
+				if score > alpha && score < beta {
+					score = -negamax(s, pos, depth-1, ply+1, -beta, -alpha)
+				}
+			}
+
 			if score > maxscore {
 				maxscore = score
 				if score > alpha {
@@ -308,6 +320,7 @@ search_root :: proc(s: ^SearchState, pos: ^GamePosition, depth: int, prev_best: 
 		}
 	}
 
+	legal_moves := 0
 	for i in 0..<ml.n {
 		move := pick_next_move(&ml, i)
 
@@ -316,8 +329,17 @@ search_root :: proc(s: ^SearchState, pos: ^GamePosition, depth: int, prev_best: 
 			undo_move_inplace(move, mi, pos)
 			continue
 		}
+		legal_moves += 1
 
-		score := -negamax(s, pos, depth-1, 1, -beta, -alpha)
+		score: int
+		if legal_moves == 1 {
+			score = -negamax(s, pos, depth-1, 1, -beta, -alpha)
+		} else {
+			score = -negamax(s, pos, depth-1, 1, -alpha-1, -alpha)
+			if score > alpha && score < beta {
+				score = -negamax(s, pos, depth-1, 1, -beta, -alpha)
+			}
+		}
 		undo_move_inplace(move, mi, pos)
 
 		if should_stop() {
