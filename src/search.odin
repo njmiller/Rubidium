@@ -203,6 +203,8 @@ negamax :: proc(
 	maxscore := -INF
 	best_move := NULL_MOVE
 	legal_moves := 0
+	quiets_tried: [256]Move
+	n_quiets := 0
 	for i in 0..<all_moves.n {
 		move := pick_next_move(&all_moves, i)
 
@@ -240,6 +242,11 @@ negamax :: proc(
 				}
 			}
 
+			if !move.is_capture {
+				quiets_tried[n_quiets] = move
+				n_quiets += 1
+			}
+
 			if score > maxscore {
 				maxscore = score
 				if score > alpha {
@@ -252,8 +259,12 @@ negamax :: proc(
 
 		if alpha >= beta {
 			if !move.is_capture {
+				bonus := min(depth * depth, HISTORY_MAX)
 				store_killer(s, ply, move)
 				update_history(s, move, min(depth * depth, HISTORY_MAX))
+
+				// Penalize quiets tried before cutoff
+				for j in 0..<n_quiets-1 do update_history(s, quiets_tried[j], -bonus)
 			}
 			break
 		}
