@@ -6,6 +6,9 @@ import "core:time"
 
 INF :: 32000
 MATE :: 31000
+KILLER_1 :: 900
+KILLER_2 :: 800
+
 MAX_PLY :: 128
 MAX_GAME_PLY :: 1024
 
@@ -25,6 +28,7 @@ SearchState :: struct {
 	history : History,
 	start: time.Tick,
 	limits: SearchLimits,
+	killers: [MAX_PLY][2]Move,
 }
 
 History :: struct {
@@ -87,6 +91,12 @@ pick_next_move :: proc(ml: ^MoveList, start: int) -> Move {
 	return ml.moves[start]
 }
 
+store_killer :: proc(s: ^SearchState, ply: int, move: Move) {
+	if move_equal(s.killers[ply][0], move) do return
+	s.killers[ply][1] = s.killers[ply][0]
+	s.killers[ply][0] = move
+}
+
 // https://en.wikipedia.org/wiki/Negamax
 negamax :: proc(s: ^SearchState, pos: ^GamePosition, depth, ply, alpha, beta: int) -> int {
 	s.nodes += 1
@@ -130,13 +140,14 @@ negamax :: proc(s: ^SearchState, pos: ^GamePosition, depth, ply, alpha, beta: in
 
 	all_moves := gen_moves(pos)
 
-	// Search the hash move first
-	if tt_move != 0 {
-		for i in 0..<all_moves.n {
-			if pack_move(all_moves.moves[i]) == tt_move {
-				all_moves.scores[i] = max(int)
-				break
-			}
+	// Order: TT move, captures (MVV-LVA), killers, other quiets
+	for i in 0..<all_moves.n {
+		m := all_moves.moves[i]
+		if pack_move(m) == tt_move {
+			all_moves.scores[i] = max(int)
+		} else if !m.is_capture {
+			if move_equal(m, s.killers[ply][0]) do all_moves.scores[i] = KILLER_1
+			else if move_equal(m, s.killers[ply][1]) do all_moves.scores[i] = KILLER_2
 		}
 	}
 
@@ -162,7 +173,10 @@ negamax :: proc(s: ^SearchState, pos: ^GamePosition, depth, ply, alpha, beta: in
 		}
 		undo_move_inplace(move, mi, pos)
 
-		if alpha >= beta do break
+		if alpha >= beta {
+			if !move.is_capture do store_killer(s, ply, move)
+			break
+		}
 
 	}
 
