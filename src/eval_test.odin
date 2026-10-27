@@ -7,14 +7,14 @@ import "core:testing"
 // psqt_end, phase) from scratch by walking the piece bitboards. Used by the
 // eval tests to verify that the incrementally updated fields in
 // apply/undo_move_inplace never drift.
-recompute_eval_fields :: proc(pos: ^GamePosition) -> (material: [Color]int, psqt_mid: [Color]int, psqt_end: [Color]int, phase: int) {
+recompute_eval_fields :: proc(pos: ^GamePosition) -> (psqt_mid: [Color]int, psqt_end: [Color]int, phase: int) {
 	for color in Color {
 		for pt in PieceType {
 			bb := pos.bb[color][pt]
 			for bb != 0 {
 				sq := pop_first_bit(&bb)
 				p := Piece{pt, color}
-				material[color] += PIECE_VALUE[pt]
+				// material[color] += PIECE_VALUE[pt]
 				psqt_mid[color] += psqt_value_mid(p, sq)
 				psqt_end[color] += psqt_value_end(p, sq)
 				phase += PHASE_WEIGHT[pt]
@@ -89,14 +89,13 @@ pick_random_legal :: proc(pos: ^GamePosition, state: ^u64) -> (move: Move, info:
 assert_eval_consistent :: proc(t: ^testing.T, pos: ^GamePosition, label: string) {
 	assert_board_consistent(t, pos, label)
 
-	material, psqt_mid, psqt_end, phase := recompute_eval_fields(pos)
+	psqt_mid, psqt_end, phase := recompute_eval_fields(pos)
 
 	testing.expectf(
 		t,
-		pos.material == material && pos.psqt_mid == psqt_mid && pos.psqt_end == psqt_end && pos.phase == phase,
-		"%s: incremental eval fields drift\n  material  %v vs %v\n  psqt_mid  %v vs %v\n  psqt_end  %v vs %v\n  phase     %d vs %d",
+		pos.psqt_mid == psqt_mid && pos.psqt_end == psqt_end && pos.phase == phase,
+		"%s: incremental eval fields drift\n psqt_mid  %v vs %v\n  psqt_end  %v vs %v\n  phase     %d vs %d",
 		label,
-		pos.material, material,
 		pos.psqt_mid, psqt_mid,
 		pos.psqt_end, psqt_end,
 		pos.phase, phase,
@@ -187,15 +186,18 @@ test_eval_phase_accounting :: proc(t: ^testing.T) {
 	pos = process_fen("4k3/8/8/3q4/2P5/8/8/4K3 w - - 0 1")
 	testing.expectf(t, pos.phase == PHASE_WEIGHT[.Queen],
 		"queen-only position phase %d != %d", pos.phase, PHASE_WEIGHT[.Queen])
-	b_mat := pos.material[.Black]
+	// b_mat := pos.material[.Black]
+	mid_b := pos.psqt_mid[.Black]
 
 	move := Move{idx_C4, idx_D5, Piece{.Pawn, .White}, true, .Pawn}
 	info := apply_move_inplace(move, &pos)
 
+	delta := psqt_value_mid(Piece{.Queen, .Black}, idx_D5)
+
 	assert_eval_consistent(t, &pos, "queen capture")
 	testing.expectf(t, pos.phase == 0, "queen capture phase %d != 0", pos.phase)
-	testing.expectf(t, pos.material[.Black] == b_mat - PIECE_VALUE[.Queen],
-		"queen capture material %d != %d", pos.material[.Black], b_mat - PIECE_VALUE[.Queen])
+	testing.expectf(t, pos.psqt_mid[.Black] == mid_b - delta,
+		"queen capture material %d != %d", pos.psqt_mid[.Black], mid_b - delta)
 
 	undo_move_inplace(move, info, &pos)
 	assert_eval_consistent(t, &pos, "queen capture undo")
@@ -237,23 +239,26 @@ test_eval_promotion_delta :: proc(t: ^testing.T) {
 
 	assert_eval_consistent(t, &pos, "promotion before")
 
-	mat_before := pos.material[.White]
+	// mat_before := pos.material[.White]
 	phase_before := pos.phase
+	mid_w := pos.psqt_mid[.White]
+
+	delta := psqt_value_mid({.Queen, .White}, idx_A8) - psqt_value_mid({.Pawn, .White}, idx_A7)
 
 	move := Move{idx_A7, idx_A8, Piece{.Pawn, .White}, false, .Queen}
 	info := apply_move_inplace(move, &pos)
 
 	assert_eval_consistent(t, &pos, "promotion after")
-	testing.expectf(t, pos.material[.White] == mat_before + PIECE_VALUE[.Queen] - PIECE_VALUE[.Pawn],
-		"promotion material %d != %d", pos.material[.White], mat_before + PIECE_VALUE[.Queen] - PIECE_VALUE[.Pawn])
+	testing.expectf(t, pos.psqt_mid[.White] == mid_w + delta,
+		"promotion material %d != %d", pos.psqt_mid[.White], mid_w + delta)
 	testing.expectf(t, pos.phase == phase_before + PHASE_WEIGHT[.Queen],
 		"promotion phase %d != %d", pos.phase, phase_before + PHASE_WEIGHT[.Queen])
 
 	undo_move_inplace(move, info, &pos)
 
 	assert_eval_consistent(t, &pos, "promotion undo")
-	testing.expectf(t, pos.material[.White] == mat_before,
-		"promotion undo material %d != %d", pos.material[.White], mat_before)
+	testing.expectf(t, pos.psqt_mid[.White] == mid_w,
+		"promotion undo material %d != %d", pos.psqt_mid[.White], mid_w)
 	testing.expectf(t, pos.phase == phase_before,
 		"promotion undo phase %d != %d", pos.phase, phase_before)
 }
@@ -266,14 +271,16 @@ test_eval_en_passant_delta :: proc(t: ^testing.T) {
 
 	assert_eval_consistent(t, &pos, "en passant before")
 
-	mat_w := pos.material[.White]
+	// mat_w := pos.material[.White]
+	mid_w := pos.psqt_mid[.White]
 
 	move := Move{idx_D4, idx_E3, Piece{.Pawn, .Black}, true, .Pawn}
 	info := apply_move_inplace(move, &pos)
 
+	mid_delta := psqt_value_mid(Piece{.Pawn, .White}, idx_E4)
 	assert_eval_consistent(t, &pos, "en passant after")
-	testing.expectf(t, pos.material[.White] == mat_w - PIECE_VALUE[.Pawn],
-		"en passant white material %d != %d", pos.material[.White], mat_w - PIECE_VALUE[.Pawn])
+	testing.expectf(t, pos.psqt_mid[.White] == mid_w - mid_delta,
+		"en passant white material %d != %d", pos.psqt_mid[.White], mid_w - mid_delta)
 
 	undo_move_inplace(move, info, &pos)
 

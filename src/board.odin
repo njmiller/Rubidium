@@ -167,7 +167,6 @@ GamePosition :: struct {
 	movenum:    int,
 
 	// Fields for evaluation that update on move/unmove
-	material:   [Color]int, // sum of piece values per side
 	psqt_mid:   [Color]int, // piece-square tables
 	psqt_end:   [Color]int, // endgame piece-square table
 	phase:      int,        // 0 = endgame, MAX_PHASE = midgame
@@ -308,7 +307,6 @@ put_piece :: proc(pos: ^GamePosition, p: Piece, sq: int) {
 	pos.occupied[p.color] |= sq_bb
 	pos.board[sq] = p
 
-	pos.material[p.color] += PIECE_VALUE[p.piecetype]
 	pos.phase += PHASE_WEIGHT[p.piecetype]
 	pos.psqt_mid[p.color] += psqt_value_mid(p, sq)
 	pos.psqt_end[p.color] += psqt_value_end(p, sq)
@@ -323,7 +321,6 @@ remove_piece :: proc(pos: ^GamePosition, sq: int) -> Piece {
 	pos.occupied[p.color] &~= sq_bb
 	pos.board[sq] = nil
 
-	pos.material[p.color] -= PIECE_VALUE[p.piecetype]
 	pos.phase -= PHASE_WEIGHT[p.piecetype]
 	pos.psqt_mid[p.color] -= psqt_value_mid(p, sq)
 	pos.psqt_end[p.color] -= psqt_value_end(p, sq)
