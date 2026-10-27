@@ -146,7 +146,7 @@ negamax :: proc(
 	s.history.len += 1
 	defer s.history.len -= 1
 
-	if depth == 0 do return quiesce(s, pos, ply, alpha, beta)
+	if depth <= 0 do return quiesce(s, pos, ply, alpha, beta)
 
 	score : int
 	alpha := alpha
@@ -173,9 +173,9 @@ negamax :: proc(
 	has_pieces := (pos.bb[us][.Knight] | pos.bb[us][.Bishop] | pos.bb[us][.Rook] | pos.bb[us][.Queen]) != 0
 
 	if allow_null && depth >= 3 && has_pieces && !in_check {
-		R :: 2
+		R := 3 + depth / 6
 		ni := apply_null_move(pos)
-		null_score := -negamax(s, pos, depth - 1 - R, ply+1, -beta, -beta+1, false)
+		null_score := -negamax(s, pos, max(depth - 1 - R, 0), ply+1, -beta, -beta+1, false)
 		undo_null_move(ni, pos)
 
 		if should_stop() do return 0
@@ -226,6 +226,7 @@ negamax :: proc(
 				if depth >= 3 && legal_moves >= 4 && is_quiet && !is_killer && !in_check && !gives_check {
 					r = lmr_table[min(depth, 63)][min(legal_moves, 63)]
 					r -= all_moves.scores[i] / 8192 // reduce less for moves with good history
+					// if beta - alpha > 1 do r -= 1 // reduce less for PV nodes
 					r = clamp(r, 0, depth-2) // always leave at least one depth
 				}
 
