@@ -27,15 +27,6 @@ PHASE_WEIGHT := [PieceType]int {
 	.King = 0,
 }
 
-PIECE_VALUE := [PieceType]int {
-	.Pawn = 100,
-	.Knight = 320,
-	.Bishop = 330,
-	.Rook = 500,
-	.Queen = 900,
-	.King = 0, // never used but meeded for the arrau
-}
-
 MG_PIECE_VALUE := [PieceType]int {
     .Pawn = 82,
     .Knight = 337,
