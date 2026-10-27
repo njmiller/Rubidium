@@ -13,6 +13,19 @@ MAX_PHASE :: 24
 
 TEMPO_BONUS :: 10
 
+FILE_MASKS: [8]BitBoard
+ADJACENT_FILE_MASKS: [8]BitBoard
+PASSED_PAWN_MASKS: [Color][64]BitBoard
+
+// Indexed by relative rank (0 = own back rank, 7 = promotion rank)
+PASSED_MG := [8]int{0, 5, 5, 10, 20, 35, 60, 0}
+PASSED_EG := [8]int{0, 10, 15, 25, 40, 70, 110, 0}
+
+ISOLATED_MG :: -10
+ISOLATED_EG :: -15
+DOUBLED_MG :: -10
+DOUBLED_EG :: -20
+
 GAME_PHASE :: enum u8 {
     Mid,
     End,
@@ -45,6 +58,7 @@ EG_PIECE_VALUE := [PieceType]int {
     .King = 0,
 }
 
+// https://chessprogramming.org/PeSTO's_Evaluation_Function
 psq_tables : [GAME_PHASE][PieceType][64]int
 
 //odinfmt: disable
@@ -213,9 +227,69 @@ fill_piece_square_tables :: proc "contextless" () {
     }
 }
 
+@(init)
+init_pawn_masks :: proc "contextless" () {
+    for f in 0..<8 do FILE_MASKS[f] = FILE_A << uint(f)
+
+    for f in 0..<8 {
+        if f > 0 do ADJACENT_FILE_MASKS[f] |= FILE_MASKS[f-1]
+        if f < 7 do ADJACENT_FILE_MASKS[f] |= FILE_MASKS[f+1]
+    }
+
+    for sq in 0..<64 {
+        // rank, file := sq_to_rank_file(sq)
+        rank, file := sq / 8, sq % 8
+        span := FILE_MASKS[file] | ADJACENT_FILE_MASKS[file]
+
+        // Ranks strictly ahead of the pawn, from each side's point of view
+        ahead_white: BitBoard = rank < 7 ? ~BitBoard(0) << uint((rank + 1) * 8) : 0
+        ahead_black: BitBoard = rank > 0 ? ~BitBoard(0) >> uint((8 - rank) * 8) : 0
+        
+        PASSED_PAWN_MASKS[.White][sq] = span & ahead_white
+        PASSED_PAWN_MASKS[.Black][sq] = span & ahead_black
+    }
+}
+
+eval_pawns :: proc(pos: ^GamePosition, color: Color) -> (mg: int, eg: int) {
+    ours := pos.bb[color][.Pawn]
+    theirs := pos.bb[opp_color(color)][.Pawn]
+
+    bb := ours
+    for bb != 0 {
+        sq := pop_first_bit(&bb)
+        file := sq % 8
+        rel_rank := color == .White ? sq / 8 : 7 - (sq / 8)
+
+        if PASSED_PAWN_MASKS[color][sq] & theirs == 0 {
+            mg += PASSED_MG[rel_rank]
+            eg += PASSED_EG[rel_rank]
+        }
+        if ADJACENT_FILE_MASKS[file] & ours == 0 {
+            mg += ISOLATED_MG
+            eg += ISOLATED_EG
+        }
+    }
+
+    for f in 0..<8 {
+        n := count_ones_bb(FILE_MASKS[f] & ours)
+        if n > 1 {
+            mg += DOUBLED_MG * (n-1)
+            eg += DOUBLED_EG * (n-1)
+        }
+    }
+
+    return
+}
+
 eval_position :: proc(pos: ^GamePosition) -> int {
     mid_score := pos.psqt_mid[.White] - pos.psqt_mid[.Black]
     end_score := pos.psqt_end[.White] - pos.psqt_end[.Black]
+
+    w_mg, w_eg := eval_pawns(pos, .White)
+    b_mg, b_eg := eval_pawns(pos, .Black)
+
+    mid_score += w_mg - b_mg
+    end_score += w_eg - b_eg
 
 	phase := clamp(pos.phase, 0, MAX_PHASE)
 

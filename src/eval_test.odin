@@ -101,8 +101,10 @@ assert_eval_consistent :: proc(t: ^testing.T, pos: ^GamePosition, label: string)
 		pos.phase, phase,
 	)
 
-	mid := psqt_mid[.White] - psqt_mid[.Black]
-	end := psqt_end[.White] - psqt_end[.Black]
+	w_mg, w_eg := eval_pawns(pos, .White)
+	b_mg, b_eg := eval_pawns(pos, .Black)
+	mid := psqt_mid[.White] - psqt_mid[.Black] + w_mg - b_mg
+	end := psqt_end[.White] - psqt_end[.Black] + w_eg - b_eg
 	ph := clamp(phase, 0, MAX_PHASE)
 
 	expected := (mid * ph + end * (MAX_PHASE - ph)) / MAX_PHASE
@@ -367,6 +369,31 @@ test_pesto_orientation :: proc(t: ^testing.T) {
 	bp := Piece{.Pawn, .Black}
 	testing.expect_value(t, psqt_value_end(wp, 52), 94 + 147)
 	testing.expect_value(t, psqt_value_end(bp, 12), 94 + 147) // black on e2 mirrors white on e7
+}
+
+@(test)
+test_pawn_structure :: proc(t: ^testing.T) {
+	// Lone white pawn on e2: passed (rank 1) and isolated
+	pos := process_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1")
+	mg, eg := eval_pawns(&pos, .White)
+	testing.expect_value(t, mg, PASSED_MG[1] + ISOLATED_MG)
+	testing.expect_value(t, eg, PASSED_EG[1] + ISOLATED_EG)
+
+	// Black pawn on d3 blocks e2 via the adjacent file: e2 not passed
+	pos = process_fen("4k3/8/8/8/8/3p4/4P3/4K3 w - - 0 1")
+	mg, eg = eval_pawns(&pos, .White)
+	testing.expect_value(t, mg, ISOLATED_MG)
+
+	// Doubled + isolated on the e-file, black pawn on e7 stops both
+	pos = process_fen("4k3/4p3/8/8/8/4P3/4P3/4K3 w - - 0 1")
+	mg, eg = eval_pawns(&pos, .White)
+	testing.expect_value(t, mg, 2 * ISOLATED_MG + DOUBLED_MG)
+
+	// Colour symmetry with asymmetric pawns: a position and its colour-flipped
+	// mirror must evaluate the same for the side to move
+	a := process_fen("4k3/8/8/2P5/8/8/5PP1/4K3 w - - 0 1")
+	b := process_fen("4k3/5pp1/8/8/2p5/8/8/4K3 b - - 0 1")
+	testing.expect_value(t, eval_position(&a), eval_position(&b))
 }
 
 // test_transposition :: proc(t: ^testing.T) {
