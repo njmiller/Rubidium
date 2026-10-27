@@ -102,8 +102,8 @@ assert_eval_consistent :: proc(t: ^testing.T, pos: ^GamePosition, label: string)
 		pos.phase, phase,
 	)
 
-	mid := (material[.White] + psqt_mid[.White]) - (material[.Black] + psqt_mid[.Black])
-	end := (material[.White] + psqt_end[.White]) - (material[.Black] + psqt_end[.Black])
+	mid := psqt_mid[.White] - psqt_mid[.Black]
+	end := psqt_end[.White] - psqt_end[.Black]
 	ph := clamp(phase, 0, MAX_PHASE)
 
 	expected := (mid * ph + end * (MAX_PHASE - ph)) / MAX_PHASE
@@ -165,13 +165,13 @@ test_eval_taper_endpoints :: proc(t: ^testing.T) {
 	testing.expectf(t, pos.phase == 0,
 		"bare kings phase %d != 0", pos.phase)
 
-	end_score := (pos.material[.White] + pos.psqt_end[.White]) - (pos.material[.Black] + pos.psqt_end[.Black])
+	end_score := pos.psqt_end[.White] - pos.psqt_end[.Black]
 	testing.expectf(t, eval_position(&pos) == end_score + TEMPO_BONUS,
 		"bare kings eval %d != end score %d + tempo", eval_position(&pos), end_score)
 
 	// Full material: phase MAX_PHASE -> eval must be the pure midgame score + tempo
 	pos = gen_newgame()
-	mid_score := (pos.material[.White] + pos.psqt_mid[.White]) - (pos.material[.Black] + pos.psqt_mid[.Black])
+	mid_score := pos.psqt_mid[.White] - pos.psqt_mid[.Black]
 	testing.expectf(t, eval_position(&pos) == mid_score + TEMPO_BONUS,
 		"startpos eval %d != mid score %d + tempo", eval_position(&pos), mid_score)
 }
@@ -351,6 +351,15 @@ test_eval_random_walk_consistency :: proc(t: ^testing.T) {
 		testing.expectf(t, pos == initial,
 			"walk fen %d: undo-all did not restore initial position", fen_idx)
 	}
+}
+
+@(test)
+test_pesto_orientation :: proc(t: ^testing.T) {
+	// e7 = 52, e2 = 12. PeSTO eg pawn on e7 (white's view) = 94 + 147
+	wp := Piece{.Pawn, .White}
+	bp := Piece{.Pawn, .Black}
+	testing.expect_value(t, psqt_value_end(wp, 52), 94 + 147)
+	testing.expect_value(t, psqt_value_end(bp, 12), 94 + 147) // black on e2 mirrors white on e7
 }
 
 // test_transposition :: proc(t: ^testing.T) {
