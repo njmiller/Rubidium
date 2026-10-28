@@ -181,9 +181,9 @@ negamax :: proc(
 	// Reverse futility pruning: at shallow depth, if static eval beats
 	// beta by a depth-scaled margin, assume the opponent can't recover
 	// and cut
-	// if !pv_node && !in_check && depth <= RFP_MAX_DEPTH && !is_mate_score(beta) {
-		// if static_eval - RFP_MARGIN * depth >= beta do return static_eval
-	// }
+	if !pv_node && !in_check && depth <= RFP_MAX_DEPTH && !is_mate_score(beta) {
+		if static_eval - RFP_MARGIN * depth >= beta do return static_eval
+	}
 
 	// Null move pruning
 	has_pieces := (pos.bb[us][.Knight] | pos.bb[us][.Bishop] | pos.bb[us][.Rook] | pos.bb[us][.Queen]) != 0
