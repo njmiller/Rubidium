@@ -17,6 +17,9 @@ MAX_GAME_PLY :: 1024
 
 MOVE_OVERHEAD :: 30 * time.Millisecond
 
+RFP_MAX_DEPTH :: 7
+RFP_MARGIN :: 80 // centipawns per ply of remaining depth
+
 lmr_table: [64][64]int
 
 stop_flag : bool
@@ -170,10 +173,22 @@ negamax :: proc(
 		}
 	}
 
+	pv_node := beta - alpha > 1
+
+	// Static eval for pruning decisions. Not meaningful when in check
+	static_eval := in_check ? -INF : eval_position(pos)
+
+	// Reverse futility pruning: at shallow depth, if static eval beats
+	// beta by a depth-scaled margin, assume the opponent can't recover
+	// and cut
+	// if !pv_node && !in_check && depth <= RFP_MAX_DEPTH && !is_mate_score(beta) {
+		// if static_eval - RFP_MARGIN * depth >= beta do return static_eval
+	// }
+
 	// Null move pruning
 	has_pieces := (pos.bb[us][.Knight] | pos.bb[us][.Bishop] | pos.bb[us][.Rook] | pos.bb[us][.Queen]) != 0
 
-	if allow_null && depth >= 3 && has_pieces && !in_check {
+	if allow_null && !pv_node && !in_check && depth >= 3 && has_pieces && static_eval >= beta {
 		R := 3 + depth / 6
 		ni := apply_null_move(pos)
 		null_score := -negamax(s, pos, max(depth - 1 - R, 0), ply+1, -beta, -beta+1, false)
