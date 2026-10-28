@@ -451,6 +451,7 @@ search :: proc(pos: ^GamePosition, game_history: ^History, limits: SearchLimits)
 
 	tt_age += 1
 
+	stability := 0
 	best_move := NULL_MOVE
 	for depth in 1..=limits.depth {
 		move, score := search_root(&s, pos, depth, best_move)
@@ -461,7 +462,10 @@ search :: proc(pos: ^GamePosition, game_history: ^History, limits: SearchLimits)
 			if best_move == NULL_MOVE do best_move = move
 			break
 		}
-		if move != NULL_MOVE do best_move = move
+		if move != NULL_MOVE {
+			stability = move_equal(move, best_move) ? min(stability + 1, 4) : 0
+			best_move = move
+		}
 
 		// Calculated time elapsed and nodes per second for info statement
 		elapsed := time.tick_since(s.start)
@@ -479,7 +483,11 @@ search :: proc(pos: ^GamePosition, game_history: ^History, limits: SearchLimits)
 				depth, score, ms, s.nodes, nps, move_to_uci(best_move, &buf))
 		}
 
-		if limits.soft_time > 0 && time.tick_since(s.start) >= limits.soft_time do break
+		// Stable best move: stop sooner.
+		// Changing best move: allow more time
+		STABILITY_SCALE := [5]f64{1.5, 1.2, 1.0, 0.85, 0.7}
+		soft := time.Duration(f64(limits.soft_time) * STABILITY_SCALE[stability])
+		if limits.soft_time > 0 && time.tick_since(s.start) >= soft do break
 		
 		if is_mate_score(score) do break
 
