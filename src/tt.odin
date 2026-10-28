@@ -68,15 +68,15 @@ pack_move :: proc(move: Move) -> u16 {
 }
 
 score_to_tt :: proc(score: int, ply: int) -> int {
-    if score > MATE - MAX_PLY do return score + ply
-    if score < -(MATE - MAX_PLY) do return score - ply
+    if score > MATE_BOUND do return score + ply
+    if score < -MATE_BOUND do return score - ply
 
     return score
 }
 
 score_from_tt :: proc(score: int, ply: int) -> int {
-    if score > MATE - MAX_PLY do return score - ply
-    if score < -(MATE - MAX_PLY) do return score + ply
+    if score > MATE_BOUND do return score - ply
+    if score < -MATE_BOUND do return score + ply
 
     return score
 }

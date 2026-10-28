@@ -639,6 +639,17 @@ apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
 	return info
 }
 
+// Applies a pseudo-legal move. If it leaves our king in check, it is undone
+// and legal is false; otherwise the caller must undo it with the returned info
+try_move :: #force_inline proc(move: Move, position: ^GamePosition) -> (info: MoveInfo, legal: bool) {
+	info = apply_move_inplace(move, position)
+	if is_in_check(move.piece.color, position) {
+		undo_move_inplace(move, info, position)
+		return info, false
+	}
+	return info, true
+}
+
 // Rook origin and destination squares for a castling king move
 castle_rook_squares :: proc(move: Move) -> (rook_from: int, rook_to: int) {
 	if move.pos_final > move.pos_init {

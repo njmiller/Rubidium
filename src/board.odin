@@ -287,6 +287,11 @@ all_occupied :: #force_inline proc(pos: ^GamePosition) -> BitBoard {
 	return pos.occupied[.White] | pos.occupied[.Black]
 }
 
+has_non_pawn_material :: #force_inline proc(pos: ^GamePosition, color: Color) -> bool {
+	bb := &pos.bb[color]
+	return (bb[.Knight] | bb[.Bishop] | bb[.Rook] | bb[.Queen]) != 0
+}
+
 char_to_piece :: proc(c: u8) -> (Piece, bool) {
 	for i in 0 ..< len(PIECE_CHARS) {
 		if PIECE_CHARS[i] == c do return Piece{PieceType(i % 6), Color(i / 6)}, true

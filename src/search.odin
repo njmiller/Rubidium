@@ -7,6 +7,7 @@ import "core:math"
 
 INF :: 32000
 MATE :: 31000
+MATE_BOUND :: MATE - MAX_PLY // scores beyond this are mate scores
 
 KILLER_1 :: 900_000
 KILLER_2 :: 800_000
@@ -105,8 +106,79 @@ is_repetition :: proc(h: ^History, key: u64, halfmove: int) -> bool {
 	return false
 }
 
+history_push :: #force_inline proc(h: ^History, key: u64) {
+	h.keys[h.len] = key
+	h.len += 1
+}
+
 is_mate_score :: #force_inline proc(s: int) -> bool {
-	return abs(s) > MATE - MAX_PLY
+	return abs(s) > MATE_BOUND
+}
+
+is_quiet :: #force_inline proc(m: Move) -> bool {
+	return !m.is_capture && m.promotion == .Pawn
+}
+
+// Returns the TT score and true if the entry is deep enough and its bound
+// lets us cut at this node
+tt_cutoff :: #force_inline proc(e: ^TTEntry, depth, ply, alpha, beta: int) -> (int, bool) {
+	if int(e.depth) < depth do return 0, false
+
+	score := score_from_tt(int(e.score), ply)
+	switch e.bound {
+	case .Exact: return score, true
+	case .Lower: return score, score >= beta
+	case .Upper: return score, score <= alpha
+	case .None:
+	}
+	return 0, false
+}
+
+// Reverse futility pruning: at shallow depth, if static eval beats beta by a
+// depth-scaled margin, assume the opponent can't recover
+rfp_ok :: #force_inline proc(depth, static_eval, beta: int) -> bool {
+	return depth <= RFP_MAX_DEPTH && !is_mate_score(beta) &&
+		static_eval - RFP_MARGIN * depth >= beta
+}
+
+// Null move pruning needs enough depth, an eval already above beta, and
+// non-pawn material (to avoid zugzwang)
+null_move_ok :: #force_inline proc(pos: ^GamePosition, depth, static_eval, beta: int) -> bool {
+	return depth >= 3 && static_eval >= beta && has_non_pawn_material(pos, pos.turn)
+}
+
+// Futility pruning: static eval so far below alpha that a quiet move is
+// unlikely to make up the difference
+futile :: #force_inline proc(depth, static_eval, alpha: int) -> bool {
+	return depth <= FP_MAX_DEPTH && static_eval + FP_BASE + FP_MARGIN * depth <= alpha
+}
+
+// Late move reduction, reduced less for moves with good history. Always
+// leaves at least one ply of depth
+lmr_reduction :: #force_inline proc(depth, move_num, order_score: int) -> int {
+	r := lmr_table[min(depth, 63)][min(move_num, 63)] - order_score / 8192
+	return clamp(r, 0, depth - 2)
+}
+
+bound_for :: #force_inline proc(score, alpha_orig, beta: int) -> Bound {
+	if score <= alpha_orig do return .Upper
+	if score >= beta do return .Lower
+	return .Exact
+}
+
+// Order: TT move, captures (MVV-LVA, already scored by gen_moves), killers,
+// other quiets by history
+score_moves :: proc(s: ^SearchState, ml: ^MoveList, ply: int, tt_move: u16) {
+	for i in 0..<ml.n {
+		m := ml.moves[i]
+		if pack_move(m) == tt_move {
+			ml.scores[i] = max(int)
+		} else if is_quiet(m) {
+			if move_equal(m, s.killers[ply][0]) do ml.scores[i] = KILLER_1
+			else if move_equal(m, s.killers[ply][1]) do ml.scores[i] = KILLER_2
+			else do ml.scores[i] = s.quiet_history[m.piece.color][m.pos_init][m.pos_final]
+		}
+	}
 }
 
 // Iterates over move list from start to end and finds one with highest
@@ -156,51 +228,35 @@ negamax :: proc(
 
 	if ply >= MAX_PLY do return eval_position(pos)
 
-	// Adding hash key to history
-	s.history.keys[s.history.len] = pos.hash
-	s.history.len += 1
+	history_push(&s.history, pos.hash)
 	defer s.history.len -= 1
 
 	if depth <= 0 do return quiesce(s, pos, ply, alpha, beta)
-	
-	us := pos.turn
-	in_check := is_in_check(us, pos)
+
+	in_check := is_in_check(pos.turn, pos)
 
 	score : int
 	alpha := alpha
 	alpha_orig := alpha
-	
+
 	// Transposition table probe
 	tt_move: u16 = 0
 	if e, hit := tt_probe(pos.hash); hit {
 		tt_move = e.move
-		if ply > 0 && int(e.depth) >= depth {
-			tt_score := score_from_tt(int(e.score), ply)
-			switch e.bound {
-				case .Exact: return tt_score
-				case .Lower: if tt_score >= beta do return tt_score
-				case .Upper: if tt_score <= alpha do return tt_score
-				case .None:
-			}
+		if ply > 0 {
+			if tt_score, cut := tt_cutoff(e, depth, ply, alpha, beta); cut do return tt_score
 		}
 	}
 
 	pv_node := beta - alpha > 1
+	can_prune_node := !pv_node && !in_check
 
 	// Static eval for pruning decisions. Not meaningful when in check
 	static_eval := in_check ? -INF : eval_position(pos)
 
-	// Reverse futility pruning: at shallow depth, if static eval beats
-	// beta by a depth-scaled margin, assume the opponent can't recover
-	// and cut
-	if !pv_node && !in_check && depth <= RFP_MAX_DEPTH && !is_mate_score(beta) {
-		if static_eval - RFP_MARGIN * depth >= beta do return static_eval
-	}
+	if can_prune_node && rfp_ok(depth, static_eval, beta) do return static_eval
 
-	// Null move pruning
-	has_pieces := (pos.bb[us][.Knight] | pos.bb[us][.Bishop] | pos.bb[us][.Rook] | pos.bb[us][.Queen]) != 0
-
-	if allow_null && !pv_node && !in_check && depth >= 3 && has_pieces && static_eval >= beta {
+	if can_prune_node && allow_null && null_move_ok(pos, depth, static_eval, beta) {
 		R := 3 + depth / 6
 		ni := apply_null_move(pos)
 		null_score := -negamax(s, pos, max(depth - 1 - R, 0), ply+1, -beta, -beta+1, false)
@@ -215,18 +271,7 @@ negamax :: proc(
 	}
 
 	all_moves := gen_moves(pos)
-
-	// Order: TT move, captures (MVV-LVA), killers, other quiets
-	for i in 0..<all_moves.n {
-		m := all_moves.moves[i]
-		if pack_move(m) == tt_move {
-			all_moves.scores[i] = max(int)
-		} else if !m.is_capture && m.promotion == .Pawn {
-			if move_equal(m, s.killers[ply][0]) do all_moves.scores[i] = KILLER_1
-			else if move_equal(m, s.killers[ply][1]) do all_moves.scores[i] = KILLER_2
-			else do all_moves.scores[i] = s.quiet_history[m.piece.color][m.pos_init][m.pos_final]
-		}
-	}
+	score_moves(s, &all_moves, ply, tt_move)
 
 	maxscore := -INF
 	best_move := NULL_MOVE
@@ -235,75 +280,69 @@ negamax :: proc(
 	n_quiets := 0
 	for i in 0..<all_moves.n {
 		move := pick_next_move(&all_moves, i)
-		is_quiet := !move.is_capture && move.promotion == .Pawn
+		quiet := is_quiet(move)
 
-		mi := apply_move_inplace(move, pos)
+		mi, legal := try_move(move, pos)
+		if !legal do continue
 
-		if !is_in_check(move.piece.color, pos) {
-			legal_moves += 1
-			gives_check := is_in_check(pos.turn, pos) // pos.turn is opponent now
+		legal_moves += 1
+		gives_check := is_in_check(pos.turn, pos) // pos.turn is opponent now
 
-			// Shallow-depth pruning of quiet moves. Never prune the first move,
-			// and stop pruning if every line searched so far gets us mated
-			can_prune := !pv_node & !in_check && is_quiet && !gives_check &&
-				legal_moves > 1 && maxscore > -(MATE - MAX_PLY)
+		// Shallow-depth pruning of quiet moves. Never prune the first move,
+		// and stop pruning if every line searched so far gets us mated
+		can_prune := can_prune_node && quiet && !gives_check &&
+			legal_moves > 1 && maxscore > -MATE_BOUND
 
-			// Futility pruning: static eval so far below alpha that a quiet
-			// move is unlikely to make up the difference
-			if can_prune && depth <= FP_MAX_DEPTH && static_eval + FP_BASE + FP_MARGIN * depth <= alpha {
-				undo_move_inplace(move, mi, pos)
-				continue
+		if can_prune && futile(depth, static_eval, alpha) {
+			undo_move_inplace(move, mi, pos)
+			continue
+		}
+
+		if legal_moves == 1 {
+			// First move: full window
+			score = -negamax(s, pos, depth-1, ply+1, -beta, -alpha)
+		} else {
+			// Late move reductions
+			r := 0
+			is_killer := all_moves.scores[i] >= KILLER_2 && all_moves.scores[i] < CAPTURE_BASE
+
+			if depth >= 3 && legal_moves >= 4 && quiet && !is_killer && !in_check && !gives_check {
+				r = lmr_reduction(depth, legal_moves, all_moves.scores[i])
 			}
 
-			if legal_moves == 1 {
-				// First move: full window
+			// Reduced depth, null window
+			score = -negamax(s, pos, depth-1-r, ply+1, -alpha-1, -alpha)
+
+			// Reduced search beat alpha: verify at full depth
+			if r > 0 && score > alpha {
+				score = -negamax(s, pos, depth-1, ply+1, -alpha-1, -alpha)
+			}
+
+			// Beat alpha at full depth but didn't fail high; get its exact score
+			if score > alpha && score < beta {
 				score = -negamax(s, pos, depth-1, ply+1, -beta, -alpha)
-			} else {
-				// Late move reductions
-				r := 0
-				is_killer := all_moves.scores[i] >= KILLER_2 && all_moves.scores[i] < CAPTURE_BASE
-
-				if depth >= 3 && legal_moves >= 4 && is_quiet && !is_killer && !in_check && !gives_check {
-					r = lmr_table[min(depth, 63)][min(legal_moves, 63)]
-					r -= all_moves.scores[i] / 8192 // reduce less for moves with good history
-					// if beta - alpha > 1 do r -= 1 // reduce less for PV nodes
-					r = clamp(r, 0, depth-2) // always leave at least one depth
-				}
-
-				// Reduced depth, null window
-				score = -negamax(s, pos, depth-1-r, ply+1, -alpha-1, -alpha)
-
-				// Reduced search beat alpha: verify at full depth
-				if r > 0 && score > alpha {
-					score = -negamax(s, pos, depth-1, ply+1, -alpha-1, -alpha)
-				}
-
-				// Beat alpha at full dpeth but didn't fail high; get its exact score
-				if score > alpha && score < beta {
-					score = -negamax(s, pos, depth-1, ply+1, -beta, -alpha)
-				}
-			}
-
-			if is_quiet {
-				quiets_tried[n_quiets] = move
-				n_quiets += 1
-			}
-
-			if score > maxscore {
-				maxscore = score
-				if score > alpha {
-					alpha = score
-					best_move = move
-				}
 			}
 		}
 		undo_move_inplace(move, mi, pos)
 
+		if quiet {
+			quiets_tried[n_quiets] = move
+			n_quiets += 1
+		}
+
+		if score > maxscore {
+			maxscore = score
+			if score > alpha {
+				alpha = score
+				best_move = move
+			}
+		}
+
 		if alpha >= beta {
-			if is_quiet {
+			if quiet {
 				bonus := min(depth * depth, HISTORY_MAX)
 				store_killer(s, ply, move)
-				update_history(s, move, min(depth * depth, HISTORY_MAX))
+				update_history(s, move, bonus)
 
 				// Penalize quiets tried before cutoff
 				for j in 0..<n_quiets-1 do update_history(s, quiets_tried[j], -bonus)
@@ -318,17 +357,9 @@ negamax :: proc(
 		return in_check ? -(MATE - ply) : 0
 	}
 
-	// Transpotion table store
+	// Transposition table store
 	if !should_stop() {
-		bound: Bound
-		if maxscore <= alpha_orig {
-			bound = .Upper
-		} else if maxscore >= beta {
-			bound = .Lower
-		} else {
-			bound = .Exact
-		}
-		tt_store(pos.hash, best_move, maxscore, depth, bound, ply)
+		tt_store(pos.hash, best_move, maxscore, depth, bound_for(maxscore, alpha_orig, beta), ply)
 	}
 
 	return maxscore
@@ -358,12 +389,8 @@ quiesce :: proc(s: ^SearchState, pos: ^GamePosition, ply, alpha, beta: int) -> i
 		// Only captures and queen promotions
 		if ml.scores[i] < CAPTURE_BASE do break
 
-		mi := apply_move_inplace(move, pos)
-
-		if is_in_check(move.piece.color, pos) {
-			undo_move_inplace(move, mi, pos)
-			continue
-		}
+		mi, legal := try_move(move, pos)
+		if !legal do continue
 
 		score := -quiesce(s, pos, ply+1, -beta, -alpha)
 		undo_move_inplace(move, mi, pos)
@@ -385,8 +412,7 @@ search_root :: proc(s: ^SearchState, pos: ^GamePosition, depth: int, prev_best: 
 	best_move = NULL_MOVE
 
 	// Push the root hash so repetitions found deepr in the tree see it
-	s.history.keys[s.history.len] = pos.hash
-	s.history.len += 1
+	history_push(&s.history, pos.hash)
 	defer s.history.len -= 1
 
 	ml := gen_moves(pos)
@@ -406,11 +432,8 @@ search_root :: proc(s: ^SearchState, pos: ^GamePosition, depth: int, prev_best: 
 	for i in 0..<ml.n {
 		move := pick_next_move(&ml, i)
 
-		mi := apply_move_inplace(move, pos)
-		if is_in_check(move.piece.color, pos) {
-			undo_move_inplace(move, mi, pos)
-			continue
-		}
+		mi, legal := try_move(move, pos)
+		if !legal do continue
 		legal_moves += 1
 
 		score: int
