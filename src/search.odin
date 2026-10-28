@@ -17,6 +17,10 @@ MAX_GAME_PLY :: 1024
 
 MOVE_OVERHEAD :: 30 * time.Millisecond
 
+FP_MAX_DEPTH :: 6
+FP_BASE :: 100
+FP_MARGIN :: 75 // centipawns per ply of remaining depth
+
 RFP_MAX_DEPTH :: 7
 RFP_MARGIN :: 80 // centipawns per ply of remaining depth
 
@@ -229,6 +233,19 @@ negamax :: proc(
 
 		if !is_in_check(move.piece.color, pos) {
 			legal_moves += 1
+			gives_check := is_in_check(pos.turn, pos) // pos.turn is opponent now
+
+			// Shallow-depth pruning of quiet moves. Never prune the first move,
+			// and stop pruning if every line searched so far gets us mated
+			can_prune := !pv_node & !in_check && is_quiet && !gives_check &&
+				legal_moves > 1 && maxscore > -(MATE - MAX_PLY)
+
+			// Futility pruning: static eval so far below alpha that a quiet
+			// move is unlikely to make up the difference
+			if can_prune && depth <= FP_MAX_DEPTH && static_eval + FP_BASE + FP_MARGIN * depth <= alpha {
+				undo_move_inplace(move, mi, pos)
+				continue
+			}
 
 			if legal_moves == 1 {
 				// First move: full window
@@ -237,7 +254,6 @@ negamax :: proc(
 				// Late move reductions
 				r := 0
 				is_killer := all_moves.scores[i] >= KILLER_2 && all_moves.scores[i] < CAPTURE_BASE
-				gives_check := is_in_check(pos.turn, pos) // pos.turn is opponent now
 
 				if depth >= 3 && legal_moves >= 4 && is_quiet && !is_killer && !in_check && !gives_check {
 					r = lmr_table[min(depth, 63)][min(legal_moves, 63)]
