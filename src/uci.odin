@@ -220,9 +220,11 @@ handle_go :: proc(args: []string) {
 		case limits.infinite:
 			// no time limit, wait for stop
 		case movetime > 0:
-			limits.time_budget = max(time.Duration(movetime) * time.Millisecond - MOVE_OVERHEAD, time.Millisecond)
+			// Exact time requested: use all of it
+			t := max(time.Duration(movetime) * time.Millisecond - MOVE_OVERHEAD, time.Millisecond)
+			limits.soft_time, limits.hard_time = t, t
 		case has_clock:
-			limits.time_budget = time_budget(my_time, my_inc, movestogo)
+			limits.soft_time, limits.hard_time = time_limits(my_time, my_inc, movestogo)
 	}
 
 	// Start the search with the parsed limits

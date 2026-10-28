@@ -30,7 +30,8 @@ stop_flag : bool
 
 SearchLimits :: struct {
 	depth: int,
-	time_budget: time.Duration, // 0 = no limit
+	soft_time: time.Duration, // don't start a new iteration after this (0 = no limit)
+	hard_time: time.Duration, // abort the search at this point (0 = no limit)
 	nodes: int,
 	infinite: bool,
 }
@@ -63,21 +64,28 @@ init_lmr :: proc "contextless" () {
 check_limits :: proc(s: ^SearchState) {
 	if s.nodes & 2047 != 0 do return
 
-	over_time := s.limits.time_budget > 0 && time.tick_since(s.start) >= s.limits.time_budget
+	over_time := s.limits.hard_time > 0 && time.tick_since(s.start) >= s.limits.hard_time
 	over_nodes := s.limits.nodes > 0 && s.nodes >= s.limits.nodes
 
 	if over_time || over_nodes do sync.atomic_store_explicit(&stop_flag, true, .Relaxed)
 }
 
-time_budget :: proc(time_left_ms, inc_ms, movestogo: int) -> time.Duration {
+time_limits :: proc(time_left_ms, inc_ms, movestogo: int) -> (soft, hard: time.Duration) {
 	left := time.Duration(max(time_left_ms, 0)) * time.Millisecond
 	inc := time.Duration(max(inc_ms, 0)) * time.Millisecond
-	mtg := movestogo > 0 ? movestogo : 30 // sudden death: assume ~30 moves left
+	mtg := movestogo > 0 ? movestogo : 25 // sudden death: assume ~25 moves left
 
-	budget := left / time.Duration(mtg) + inc * 3 / 4
-	budget = min(budget, left - MOVE_OVERHEAD) // never plan past the flag
+	// Never plan past the flag
+	max_time := max(left - MOVE_OVERHEAD, time.Millisecond)
 
-	return max(budget, time.Millisecond)
+	base := left / time.Duration(mtg) + inc * 3 / 4
+
+	// Hard limit: room for an iteration started just before the soft limit
+	// to finish, but never more than half the remaining time
+	hard = min(base * 3, max_time / 2)
+	soft = min(base, hard)
+
+	return max(soft, time.Millisecond), max(hard, time.Millisecond)
 }
 
 should_stop :: #force_inline proc() -> bool {
@@ -467,13 +475,12 @@ search :: proc(pos: ^GamePosition, game_history: ^History, limits: SearchLimits)
 			fmt.printf("info depth %d score mate %d time %d nodes %d nps %d pv %s\n",
 				depth, score > 0 ? mate_in : -mate_in, ms, s.nodes, nps, move_to_uci(best_move, &buf))
 		} else {
-
 			fmt.printf("info depth %d score cp %d time %d nodes %d nps %d pv %s\n",
 				depth, score, ms, s.nodes, nps, move_to_uci(best_move, &buf))
 		}
 
-		if limits.time_budget > 0 && time.tick_since(s.start) > limits.time_budget / 2 do break
-
+		if limits.soft_time > 0 && time.tick_since(s.start) >= limits.soft_time do break
+		
 		if is_mate_score(score) do break
 
 	}
