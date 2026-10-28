@@ -147,6 +147,9 @@ negamax :: proc(
 	defer s.history.len -= 1
 
 	if depth <= 0 do return quiesce(s, pos, ply, alpha, beta)
+	
+	us := pos.turn
+	in_check := is_in_check(us, pos)
 
 	score : int
 	alpha := alpha
@@ -168,8 +171,6 @@ negamax :: proc(
 	}
 
 	// Null move pruning
-	us := pos.turn
-	in_check := is_in_check(us, pos)
 	has_pieces := (pos.bb[us][.Knight] | pos.bb[us][.Bishop] | pos.bb[us][.Rook] | pos.bb[us][.Queen]) != 0
 
 	if allow_null && depth >= 3 && has_pieces && !in_check {
@@ -193,7 +194,7 @@ negamax :: proc(
 		m := all_moves.moves[i]
 		if pack_move(m) == tt_move {
 			all_moves.scores[i] = max(int)
-		} else if !m.is_capture {
+		} else if !m.is_capture && m.promotion == .Pawn {
 			if move_equal(m, s.killers[ply][0]) do all_moves.scores[i] = KILLER_1
 			else if move_equal(m, s.killers[ply][1]) do all_moves.scores[i] = KILLER_2
 			else do all_moves.scores[i] = s.quiet_history[m.piece.color][m.pos_init][m.pos_final]
@@ -207,6 +208,7 @@ negamax :: proc(
 	n_quiets := 0
 	for i in 0..<all_moves.n {
 		move := pick_next_move(&all_moves, i)
+		is_quiet := !move.is_capture && move.promotion == .Pawn
 
 		mi := apply_move_inplace(move, pos)
 
@@ -219,7 +221,6 @@ negamax :: proc(
 			} else {
 				// Late move reductions
 				r := 0
-				is_quiet := !move.is_capture && move.promotion == .Pawn
 				is_killer := all_moves.scores[i] >= KILLER_2 && all_moves.scores[i] < CAPTURE_BASE
 				gives_check := is_in_check(pos.turn, pos) // pos.turn is opponent now
 
@@ -244,7 +245,7 @@ negamax :: proc(
 				}
 			}
 
-			if !move.is_capture {
+			if is_quiet {
 				quiets_tried[n_quiets] = move
 				n_quiets += 1
 			}
@@ -260,7 +261,7 @@ negamax :: proc(
 		undo_move_inplace(move, mi, pos)
 
 		if alpha >= beta {
-			if !move.is_capture {
+			if is_quiet {
 				bonus := min(depth * depth, HISTORY_MAX)
 				store_killer(s, ply, move)
 				update_history(s, move, min(depth * depth, HISTORY_MAX))
@@ -275,7 +276,7 @@ negamax :: proc(
 
 	if legal_moves == 0 {
 		// Checkmate if we are in check, otherwise it is stalemate
-		return is_in_check(pos.turn, pos) ? -(MATE - ply) : 0
+		return in_check ? -(MATE - ply) : 0
 	}
 
 	// Transpotion table store
@@ -305,11 +306,9 @@ quiesce :: proc(s: ^SearchState, pos: ^GamePosition, ply, alpha, beta: int) -> i
 	if ply >= MAX_PLY do return static_eval
 
 	best_val := static_eval
-
 	alpha := alpha
 
 	if best_val >= beta do return best_val
-
 	if best_val >= alpha do alpha = best_val
 
 	ml := gen_moves(pos)
@@ -317,7 +316,8 @@ quiesce :: proc(s: ^SearchState, pos: ^GamePosition, ply, alpha, beta: int) -> i
 	for i in 0..<ml.n {
 		move := pick_next_move(&ml, i)
 
-		if !move.is_capture do break
+		// Only captures and queen promotions
+		if ml.scores[i] < CAPTURE_BASE do break
 
 		mi := apply_move_inplace(move, pos)
 
@@ -327,7 +327,6 @@ quiesce :: proc(s: ^SearchState, pos: ^GamePosition, ply, alpha, beta: int) -> i
 		}
 
 		score := -quiesce(s, pos, ply+1, -beta, -alpha)
-
 		undo_move_inplace(move, mi, pos)
 
 		if score >= beta do return score

@@ -444,17 +444,25 @@ partition_captures_first :: proc(ml: ^MoveList) -> int {
 }
 
 mvv_lva :: proc(ml: ^MoveList, pos: ^GamePosition) {
+	// Captures must score at leat CAPTURE_BASE or quiesce will break and
+	// killer move construction will break
 	for i in 0..<ml.n {
 		move := ml.moves[i]
-		if !move.is_capture {
-			ml.scores[i] = 0
-			continue
+		score := 0
+
+		if move.is_capture {
+			victim := PieceType.Pawn // used if pos_final is empty for ep
+			if p, ok := pos.board[move.pos_final].?; ok do victim = p.piecetype
+
+			score = CAPTURE_BASE + 10 * int(victim) + int(PieceType.King) - int(move.piece.piecetype)
 		}
 
-		victim := PieceType.Pawn // used if pos_final is empty for ep
-		if p, ok := pos.board[move.pos_final].?; ok do victim = p.piecetype
+		if move.promotion == .Queen {
+			// Treat like winning a queen's worth of material
+			score = max(score, CAPTURE_BASE) + 10 * int(PieceType.Queen)
+		}
 
-		ml.scores[i] = CAPTURE_BASE + 10 * int(victim) - int(move.piece.piecetype)
+		ml.scores[i] = score
 	}
 }
 
