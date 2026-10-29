@@ -96,7 +96,7 @@ Color :: enum u8 {
 	Black,
 }
 
-opp_color :: #force_inline proc(color: Color) -> Color {
+opp_color :: #force_inline proc "contextless" (color: Color) -> Color {
 	if color == .White do return .Black
 
 	return .White
@@ -189,21 +189,12 @@ move_piece :: proc(pos: ^GamePosition, from: int, to: int) {
 }
 
 //sq runs from 0 to 63 and rank, file go from 0 to 7
-sq_to_rank_file :: proc(sq: int) -> (int, int) {
-	//return (sq-1) / 8 + 1, (sq-1) % 8 + 1
+sq_to_rank_file :: #force_inline proc "contextless" (sq: int) -> (int, int) {
 	return (sq / 8), (sq % 8)
 }
 
-rank_file_to_sq :: proc(rank: int, file: int) -> int {
-	//return (rank-1)*8 + file
+rank_file_to_sq :: #force_inline proc "contextless" (rank: int, file: int) -> int {
 	return 8 * rank + file
-}
-
-mirror_sq :: proc(sq: int) -> int {
-	rank, file: int
-	rank, file = sq_to_rank_file(sq)
-	rank = 7 - rank
-	return rank_file_to_sq(rank, file)
 }
 
 display_position :: proc(position: GamePosition) {

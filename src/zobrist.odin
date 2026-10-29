@@ -13,7 +13,7 @@ Zobrist :: struct {
 
 zobrist : Zobrist
 
-splitmix64 :: proc(state: ^u64) -> u64 {
+splitmix64 :: proc "contextless" (state: ^u64) -> u64 {
     state^ += 0x9E3779B97F4A7C15
     z := state^
     z = (z ~ (z >> 30)) * 0xBF58476D1CE4E5B9
@@ -23,7 +23,6 @@ splitmix64 :: proc(state: ^u64) -> u64 {
 
 @(init)
 init_zobrist :: proc "contextless" () {
-	context = runtime.default_context()
 	seed: u64 = 0x1234_5678_9ABC_DEF0
 
     // for p in do for sq in 0..<64 do z.pieces[p][sq] = splitmix64(&seed)

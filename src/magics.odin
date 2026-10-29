@@ -4,7 +4,6 @@ import "core:fmt"
 import "core:math/bits"
 import "core:math/rand"
 import "base:runtime"
-import "base:intrinsics"
 
 //Shifts are equal to the number of bits needed to describe
 //all the possible permutations for the occupancy. 
@@ -354,34 +353,10 @@ init_slider_magic :: proc(m: ^magic_table, backing: []BitBoard, offset: int, sq:
 }
 
 
-//Code to generate magic numbers
-// a: rand.Rand = rand.create(1123)
-// a := rand.create(1123)
-// a2 := rand.default_random_generator(&a)
-
-/*
-random_u64_fewbits :: proc() -> BitBoard {
-    return BitBoard(rand.uint64(&a) & rand.uint64(&a) & rand.uint64(&a))
-}
-*/
-
 random_u64_fewbits :: proc() -> u64 {
 	// return rand.uint64(a2) & rand.uint64(a2) & rand.uint64(a2)
 	return rand.uint64() & rand.uint64() & rand.uint64()
 }
-
-
-/*
-count_ones_u64 :: proc(b : u64) -> int {
-    r : int = 0
-    bp : u64 = b
-    for (bp != 0) {
-        r += 1
-        bp = bp & (bp-1)
-    }
-    return r
-}
-*/
 
 index_to_bb :: proc(index: int, bits: int, m: BitBoard) -> BitBoard {
 	// i, j: int
@@ -396,119 +371,10 @@ index_to_bb :: proc(index: int, bits: int, m: BitBoard) -> BitBoard {
 	return result
 }
 
-/*
-rmask :: proc(sq : int) -> BitBoard {
-    result : BitBoard = 0
-    rk, fl : int = sq/8, sq%8
-    i : BitBoard = 1
-    
-    for r := rk+1; r <= 6; r += 1 do result |= (i << u64(fl + r*8))
-    for r := rk-1; r >= 1; r -= 1 do result |= (i << u64(fl + r*8))
-    for f := fl+1; f <= 6; f += 1 do result |= (i << u64(f + rk*8))
-    for f := fl-1; f >= 1; f -= 1 do result |= (i << u64(f + rk*8))
-
-    return result
-}
-
-bmask :: proc(sq : int) -> BitBoard {
-    result : BitBoard = 0
-    rk, fl : int = sq/8, sq%8
-    i : BitBoard = 1
-
-    for r, f := rk+1, fl+1; r<=6 && f<=6; r, f = r+1, f+1 do result |= (i << u64(f+r*8))
-    for r, f := rk+1, fl-1; r<=6 && f>=1; r, f = r+1, f-1 do result |= (i << u64(f+r*8))
-    for r, f := rk-1, fl+1; r>=1 && f<=6; r, f = r-1, f+1 do result |= (i << u64(f+r*8))
-    for r, f := rk-1, fl-1; r>=1 && f>=1; r, f = r-1, f-1 do result |= (i << u64(f+r*8))
-    return result 
-}
-
-ratt :: proc(sq : int, block : BitBoard) -> BitBoard {
-    result, i : BitBoard = 0, 1
-    rk, fl : int = sq/8, sq%8
-
-    for r := rk+1; r <= 7; r=r+1 {
-        result |= (i << u64(fl+r*8))
-        if(block & (i << u64(fl+r*8)) != 0) do break
-    }
-    for r := rk-1; r >= 0; r=r-1 {
-        result |= (i << u64(fl+r*8))
-        if(block & (i << u64(fl+r*8)) != 0) do break
-    }
-    for f := fl+1; f <= 7; f=f+1 {
-        result |= (i << u64(f+rk*8))
-        if(block & (i << u64(f+rk*8)) != 0) do break
-    }
-    for f := fl-1; f >= 0; f=f-1 {
-        result |= (i << u64(f+rk*8))
-        if(block & (i << u64(f+rk*8)) != 0) do break
-    }
-    return result
-}
-
-batt :: proc(sq : int, block : BitBoard) -> BitBoard {
-    result, i : BitBoard = 0, 1
-    rk, fl : int = sq/8, sq%8
-    for r, f := rk+1, fl+1; r <= 7 && f <= 7; r, f = r+1, f+1 {
-        result |= (i << u64(f+r*8))
-        if(block & (i << u64(f+r*8)) != 0) do break
-    }
-    for r, f := rk+1, fl-1; r <= 7 && f >= 0; r, f = r+1, f-1 {
-        result |= (i << u64(f+r*8))
-        if(block & (i << u64(f+r*8)) != 0) do break
-    }
-    for r, f := rk-1, fl+1; r >= 0 && f <= 7; r, f = r-1, f+1 {
-        result |= (i << u64(f+r*8))
-        if(block & (i << u64(f+r*8)) != 0) do break
-    }
-    for r, f := rk-1, fl-1; r >= 0 && f >= 0; r, f = r-1, f-1 {
-        result |= (i << u64(f+r*8))
-        if(block & (i << u64(f+r*8)) != 0) do break
-    }
-
-    return result
-}
-*/
-
 //This just calculates the hash
-/*
-transform :: proc(b : BitBoard, magic : BitBoard, bits : int) -> int {
-    return int((b*magic) >> u64(64 - bits))
-}
-*/
-
 transform :: proc(b: BitBoard, magic: u64, bits: int) -> int {
 	return int((u64(b) * magic) >> u64(64 - bits))
 }
-
-/*
-find_magic :: proc(sq : int, m : int, bishop : bool) -> BitBoard {
-    mask, magic : BitBoard
-    b, a, used : [4096]BitBoard
-    i, j, k, n : int
-    fail : bool
-
-    mask = bishop ? bmask(sq) : rmask(sq)
-    n = count_ones(mask)
-
-    for i = 0; i < (1 << u64(n)); i=i+1 {
-        b[i] = index_to_bb(i, n, mask)
-        a[i] = bishop ? batt(sq, b[i]) : ratt(sq, b[i])
-    }
-    for k = 0; k < 100000000; k=k+1 {
-        magic = random_u64_fewbits()
-        if(count_ones((mask * magic) & 0xFF00000000000000) < 6) do continue
-        for i = 0; i < 4096; i=i+1 do used[i] = 0
-        for i, fail = 0, false; !fail && i < (1 << u64(n)); i=i+1 {
-            j = transform(b[i], magic, m)
-            if(used[j] == 0) do used[j] = a[i]
-            else if(used[j] != a[i]) do fail = true
-        }
-        if !fail do return magic
-    }
-    fmt.println("***Failed***")
-    return 0
-}
-*/
 
 find_magic :: proc(sq: int, m: int, bishop: bool) -> u64 {
 	magic: u64

@@ -197,8 +197,6 @@ eg_king_table := [64]int {
 
 @(init)
 fill_piece_square_tables :: proc "contextless" () {
-    context = runtime.default_context()
-    
     // PeSTO tables are listed a8 first so we need to flip so index 0 = a1
 
     mg := [PieceType][64]int {
@@ -237,8 +235,8 @@ init_pawn_masks :: proc "contextless" () {
     }
 
     for sq in 0..<64 {
-        // rank, file := sq_to_rank_file(sq)
-        rank, file := sq / 8, sq % 8
+        rank, file := sq_to_rank_file(sq)
+        // rank, file := sq / 8, sq % 8
         span := FILE_MASKS[file] | ADJACENT_FILE_MASKS[file]
 
         // Ranks strictly ahead of the pawn, from each side's point of view
@@ -300,7 +298,7 @@ eval_position :: proc(pos: ^GamePosition) -> int {
 	return (pos.turn == .White ? score : -score) + TEMPO_BONUS
 }
 
-flip :: #force_inline proc(sq: int) -> int {
+flip :: #force_inline proc "contextless" (sq: int) -> int {
     return sq ~ 56
 }
 

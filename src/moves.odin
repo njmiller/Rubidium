@@ -46,19 +46,13 @@ king_moves: [64]BitBoard
 //test, so they are built once at startup
 @(init)
 init_attack_tables_startup :: proc "contextless" () {
-	context = runtime.default_context()
 	init_knight_moves()
 	init_king_moves()
 }
 
-init_knight_moves :: proc() {
+init_knight_moves :: proc "contextless" () {
 	pi: BitBoard
 	pos_moves: BitBoard
-
-	//left_side : BitBoard = 1085102592571150095
-	//right_side : BitBoard = 17361641481138401520
-	//left_two : BitBoard = 217020518514230019
-	//right_two : BitBoard = 13889313184910721216
 
 	left_side: BitBoard : FILE_A | FILE_B | FILE_C | FILE_D
 	right_side: BitBoard : FILE_E | FILE_F | FILE_G | FILE_H
@@ -77,14 +71,9 @@ init_knight_moves :: proc() {
 	}
 }
 
-init_king_moves :: proc() {
+init_king_moves :: proc "contextless" () {
 	pi: BitBoard
 	pos_moves: BitBoard
-
-	//left_side : BitBoard = 1085102592571150095
-	//right_side : BitBoard = 17361641481138401520
-	//left_one : BitBoard = 72340172838076673
-	//right_one : BitBoard = 9259542123273814144
 
 	left_side: BitBoard : FILE_A | FILE_B | FILE_C | FILE_D
 	right_side: BitBoard : FILE_E | FILE_F | FILE_G | FILE_H
@@ -383,45 +372,9 @@ is_in_check :: proc(color: Color, position: ^GamePosition) -> bool {
 	return is_square_attacked(int(king_sq), opp_color(color), position)
 }
 
-// If we are in check and we are still in check after all possible generated
-// moves, then it is checkmate
-is_checkmate :: proc(position: ^GamePosition) -> bool {
-
-	color := position.turn
-	if !is_in_check(color, position) do return false
-
-	movelist: MoveList = ---
-	gen_moves(position, &movelist)
-
-	for i in 0..<movelist.n {
-		move := movelist.moves[i]
-		mi := apply_move_inplace(move, position)
-		legal := !is_in_check(color, position)
-		undo_move_inplace(move, mi, position)
-		if legal do return false
-	}
-
-	return true
-}
-
 add_move_to_list :: proc(ml: ^MoveList, m: Move) {
 	ml.moves[ml.n] = m
 	ml.n += 1
-}
-
-// Move captures to the front of the list and return the number of captures
-partition_captures_first :: proc(ml: ^MoveList) -> int {
-	ncap := 0
-	for i in 0..<ml.n {
-		// If it is a capture swap with earliest element in list that is
-		// not a capture
-		if ml.moves[i].is_capture {
-			ml.moves[ncap], ml.moves[i] = ml.moves[i], ml.moves[ncap]
-			ncap += 1
-		}
-	}
-
-	return ncap
 }
 
 bb_to_moves :: proc(

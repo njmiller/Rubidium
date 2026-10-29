@@ -91,12 +91,12 @@ F8: BitBoard : 1 << 61
 G8: BitBoard : 1 << 62
 H8: BitBoard : 1 << 63
 
-rank_file_to_bb :: proc(rank: int, file: int) -> BitBoard {
+rank_file_to_bb :: proc "contextless" (rank: int, file: int) -> BitBoard {
 	sq: int = rank_file_to_sq(rank, file)
 	return BitBoard(1) << uint(sq)
 }
 
-sq_to_bb :: #force_inline proc(sq: int) -> BitBoard {
+sq_to_bb :: #force_inline proc "contextless" (sq: int) -> BitBoard {
 	return BitBoard(1) << uint(sq)
 }
 
@@ -119,20 +119,11 @@ display_bitboard :: proc(bitboard: BitBoard) {
 	fmt.print("\n")
 }
 
-count_ones_bb :: proc(b: BitBoard) -> int {
-	/*
-    r : int = 0
-    bp : BitBoard = b
-    for (bp != 0) {
-        r += 1
-        bp = bp & (bp-1)
-    }
-    return r
-    */
+count_ones_bb :: #force_inline proc "contextless" (b: BitBoard) -> int {
 	return int(bits.count_ones(u64(b)))
 }
 
-pop_first_bit :: #force_inline proc(bb: ^BitBoard) -> int {
+pop_first_bit :: #force_inline proc "contextless" (bb: ^BitBoard) -> int {
 	sq := int(intrinsics.count_trailing_zeros(bb^))
 	bb^ &= bb^ - 1
 	return sq
