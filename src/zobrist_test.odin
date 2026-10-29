@@ -8,7 +8,8 @@ import "core:testing"
 // move is not found.
 play_uci_moves :: proc(t: ^testing.T, pos: ^GamePosition, moves: []string) -> bool {
 	for move_str in moves {
-		move_list := gen_moves(pos)
+		move_list : MoveList = ---
+		gen_moves(pos, &move_list)
 		found := false
 
 		for i in 0 ..< move_list.n {

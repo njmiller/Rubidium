@@ -219,10 +219,9 @@ get_pawn_moves :: proc(
 	return moves_bb, captures_bb
 }
 
-gen_moves :: proc(position: ^GamePosition) -> MoveList {
+gen_moves :: proc(position: ^GamePosition, move_list: ^MoveList) {
 	// This is better than the separate procedures because we only
 	// have to loop over a single bitboard
-	move_list : MoveList = ---
 	move_list.n = 0
 
 	us := position.turn
@@ -257,15 +256,14 @@ gen_moves :: proc(position: ^GamePosition) -> MoveList {
 				moves_bb = targets &~ enemy
 			}
 
-			bb_to_moves(&move_list, sq, Piece{pt, us}, moves_bb, captures_bb)
+			bb_to_moves(move_list, sq, Piece{pt, us}, moves_bb, captures_bb)
 		}
 	}
 
-	gen_castle_move(&move_list, position)
+	gen_castle_move(move_list, position)
 
 	// Scores are left unset; callers that need ordering score the list
 	// themselves (see movepick.odin)
-	return move_list
 }
 
 //Returns the castling rights that are lost when a move touches sq,
@@ -391,7 +389,8 @@ is_checkmate :: proc(position: ^GamePosition) -> bool {
 	color := position.turn
 	if !is_in_check(color, position) do return false
 
-	movelist := gen_moves(position)
+	movelist: MoveList = ---
+	gen_moves(position, &movelist)
 
 	for i in 0..<movelist.n {
 		move := movelist.moves[i]

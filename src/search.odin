@@ -222,13 +222,14 @@ negamax :: proc(
 		}
 	}
 
-	all_moves := gen_moves(pos)
+	all_moves : MoveList = ---
+	gen_moves(pos, &all_moves)
 	score_moves(s, &all_moves, pos, ply, tt_move)
 
 	maxscore := -INF
 	best_move := NULL_MOVE
 	legal_moves := 0
-	quiets_tried: [256]Move
+	quiets_tried: [256]Move = ---
 	n_quiets := 0
 	for i in 0..<all_moves.n {
 		move := pick_next_move(&all_moves, i)
@@ -333,7 +334,8 @@ quiesce :: proc(s: ^SearchState, pos: ^GamePosition, ply, alpha, beta: int) -> i
 	if best_val >= beta do return best_val
 	if best_val >= alpha do alpha = best_val
 
-	ml := gen_moves(pos)
+	ml : MoveList = ---
+	gen_moves(pos, &ml)
 	mvv_lva(&ml, pos)
 
 	for i in 0..<ml.n {
@@ -368,7 +370,8 @@ search_root :: proc(s: ^SearchState, pos: ^GamePosition, depth: int, prev_best: 
 	history_push(&s.history, pos.hash)
 	defer s.history.len -= 1
 
-	ml := gen_moves(pos)
+	ml : MoveList = ---
+	gen_moves(pos, &ml)
 	mvv_lva(&ml, pos)
 
 	// Search the previous iteration's best move first. This makes alpha-beta

@@ -172,7 +172,8 @@ test_castle_gen :: proc(_: ^testing.T) {
 	fen := "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1"
 	pos := process_fen(fen)
 
-	move_list := gen_moves(&pos)
+	move_list : MoveList = ---
+	gen_moves(&pos, &move_list)
 
 	found_kingside, found_queenside := false, false
 	for i in 0..<move_list.n {

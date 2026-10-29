@@ -63,7 +63,8 @@ next_random :: proc(state: ^u64) -> u64 {
 // Returns the move and its MoveInfo so the caller can undo it later. If no
 // legal move exists, ok is false and the position is unchanged.
 pick_random_legal :: proc(pos: ^GamePosition, state: ^u64) -> (move: Move, info: MoveInfo, ok: bool) {
-	move_list := gen_moves(pos)
+	move_list : MoveList = ---
+	gen_moves(pos, &move_list)
 	if move_list.n == 0 do return
 
 	start := int(next_random(state) % u64(move_list.n))

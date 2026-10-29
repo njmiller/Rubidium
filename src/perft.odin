@@ -21,7 +21,8 @@ perft :: proc(depth: int, position: ^GamePosition, stats: ^PerftStats) {
 		return
 	}
 
-	move_list := gen_moves(position)
+	move_list : MoveList = ---
+	gen_moves(position, &move_list)
 
 	for i in 0..<move_list.n {
 		move := move_list.moves[i]
@@ -49,7 +50,9 @@ perft_divide :: proc(depth: int, position: ^GamePosition) -> u64 {
 
 	total_nodes: u64 = 0
 	display_position(position^)
-	move_list := gen_moves(position)
+
+	move_list : MoveList = ---
+	gen_moves(position, &move_list)
 
 	fmt.println("NMoves:", move_list.n)
 
