@@ -21,6 +21,9 @@ FP_MARGIN :: 75 // centipawns per ply of remaining depth
 RFP_MAX_DEPTH :: 7
 RFP_MARGIN :: 80 // centipawns per ply of remaining depth
 
+ASP_MIN_DEPTH :: 5
+ASP_WINDOW :: 25 // centipawns
+
 lmr_table: [64][64]int
 
 stop_flag : bool
@@ -356,11 +359,17 @@ quiesce :: proc(s: ^SearchState, pos: ^GamePosition, ply, alpha, beta: int) -> i
 	return best_val
 }
 
-search_root :: proc(s: ^SearchState, pos: ^GamePosition, depth: int, prev_best: Move) -> (best_move: Move, best_score: int) {
+search_root :: proc(
+	s: ^SearchState,
+	pos: ^GamePosition,
+	depth: int,
+	prev_best: Move,
+	alpha: int,
+	beta: int,
+) -> (best_move: Move, best_score: int) {
 	s.nodes += 1
 
-	alpha := -INF
-	beta := INF
+	alpha := alpha
 	best_score = -INF
 	best_move = NULL_MOVE
 
@@ -414,6 +423,7 @@ search_root :: proc(s: ^SearchState, pos: ^GamePosition, depth: int, prev_best: 
 		}
 
 		if score > alpha do alpha = score
+		if alpha >= beta do break // fail high: no need to search the rest
 
 	}
 	
@@ -431,8 +441,37 @@ search :: proc(pos: ^GamePosition, game_history: ^History, limits: SearchLimits)
 
 	stability := 0
 	best_move := NULL_MOVE
+	prev_score := 0
 	for depth in 1..=limits.depth {
-		move, score := search_root(&s, pos, depth, best_move)
+		// Narrow window around the last score once the score has settles
+		// Mate scores swing too much to aspirate around
+		delta := ASP_WINDOW
+		alpha, beta := -INF, INF
+		if depth >= ASP_MIN_DEPTH && !is_mate_score(prev_score) {
+			alpha = max(prev_score - delta, -INF)
+			beta = min(prev_score + delta, INF)
+		}
+
+		order_move := best_move // searched first at the root
+		move: Move
+		score: int
+		// move, score = search_root(&s, pos, depth, best_move)
+		for {
+			move, score = search_root(&s, pos, depth, order_move, alpha, beta)
+			if should_stop() do break
+
+			if score <= alpha && alpha > -INF {
+				// Fail low: widen downward and retry
+				alpha = max(alpha - delta, -INF)
+			} else if score >= beta && beta < INF {
+				// Fail high: widen upward, searching the move that failed high
+				beta = min(beta + delta, INF)
+				if move != NULL_MOVE do order_move = move
+			} else {
+				break // score is exact
+			}
+			delta *= 2
+		}
 
 		// Don't trust a partial iteration. Kepp the last completed one
 		// (unless we have nothing yet)
