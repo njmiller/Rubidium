@@ -1,95 +1,6 @@
 package main
 
 import "core:fmt"
-import "base:runtime"
-import "base:intrinsics"
-
-BitBoard :: distinct u64
-
-RANK_1: BitBoard : 0x00000000000000FF
-RANK_2: BitBoard : 0x000000000000FF00
-RANK_3: BitBoard : 0x0000000000FF0000
-RANK_4: BitBoard : 0x00000000FF000000
-RANK_5: BitBoard : 0x000000FF00000000
-RANK_6: BitBoard : 0x0000FF0000000000
-RANK_7: BitBoard : 0x00FF000000000000
-RANK_8: BitBoard : 0xFF00000000000000
-
-FILE_A: BitBoard : 0x0101010101010101
-FILE_B: BitBoard : 0x0202020202020202
-FILE_C: BitBoard : 0x0404040404040404
-FILE_D: BitBoard : 0x0808080808080808
-FILE_E: BitBoard : 0x1010101010101010
-FILE_F: BitBoard : 0x2020202020202020
-FILE_G: BitBoard : 0x4040404040404040
-FILE_H: BitBoard : 0x8080808080808080
-
-EDGE: BitBoard : RANK_1 | RANK_8 | FILE_A | FILE_H
-
-A1: BitBoard : 1 << 0
-B1: BitBoard : 1 << 1
-C1: BitBoard : 1 << 2
-D1: BitBoard : 1 << 3
-E1: BitBoard : 1 << 4
-F1: BitBoard : 1 << 5
-G1: BitBoard : 1 << 6
-H1: BitBoard : 1 << 7
-A2: BitBoard : 1 << 8
-B2: BitBoard : 1 << 9
-C2: BitBoard : 1 << 10
-D2: BitBoard : 1 << 11
-E2: BitBoard : 1 << 12
-F2: BitBoard : 1 << 13
-G2: BitBoard : 1 << 14
-H2: BitBoard : 1 << 15
-A3: BitBoard : 1 << 16
-B3: BitBoard : 1 << 17
-C3: BitBoard : 1 << 18
-D3: BitBoard : 1 << 19
-E3: BitBoard : 1 << 20
-F3: BitBoard : 1 << 21
-G3: BitBoard : 1 << 22
-H3: BitBoard : 1 << 23
-A4: BitBoard : 1 << 24
-B4: BitBoard : 1 << 25
-C4: BitBoard : 1 << 26
-D4: BitBoard : 1 << 27
-E4: BitBoard : 1 << 28
-F4: BitBoard : 1 << 29
-G4: BitBoard : 1 << 30
-H4: BitBoard : 1 << 31
-A5: BitBoard : 1 << 32
-B5: BitBoard : 1 << 33
-C5: BitBoard : 1 << 34
-D5: BitBoard : 1 << 35
-E5: BitBoard : 1 << 36
-F5: BitBoard : 1 << 37
-G5: BitBoard : 1 << 38
-H5: BitBoard : 1 << 39
-A6: BitBoard : 1 << 40
-B6: BitBoard : 1 << 41
-C6: BitBoard : 1 << 42
-D6: BitBoard : 1 << 43
-E6: BitBoard : 1 << 44
-F6: BitBoard : 1 << 45
-G6: BitBoard : 1 << 46
-H6: BitBoard : 1 << 47
-A7: BitBoard : 1 << 48
-B7: BitBoard : 1 << 49
-C7: BitBoard : 1 << 50
-D7: BitBoard : 1 << 51
-E7: BitBoard : 1 << 52
-F7: BitBoard : 1 << 53
-G7: BitBoard : 1 << 54
-H7: BitBoard : 1 << 55
-A8: BitBoard : 1 << 56
-B8: BitBoard : 1 << 57
-C8: BitBoard : 1 << 58
-D8: BitBoard : 1 << 59
-E8: BitBoard : 1 << 60
-F8: BitBoard : 1 << 61
-G8: BitBoard : 1 << 62
-H8: BitBoard : 1 << 63
 
 idx_A1 :: 0
 idx_B1 :: 1
@@ -185,6 +96,12 @@ Color :: enum u8 {
 	Black,
 }
 
+opp_color :: #force_inline proc(color: Color) -> Color {
+	if color == .White do return .Black
+
+	return .White
+}
+
 PieceType :: enum u8 {
 	Pawn,
 	Knight,
@@ -200,74 +117,6 @@ PIECE_CHARS := "PNBRQKpnbrqk"
 Piece :: struct {
 	piecetype: PieceType,
 	color:     Color,
-}
-
-Zobrist :: struct {
-	piece :   [Color][PieceType][64]u64,
-	// castle :  [16]u64,
-	castle :  [Castling]u64,
-	ep_file : [8]u64,
-	side :    u64,
-}
-
-zobrist : Zobrist
-
-splitmix64 :: proc(state: ^u64) -> u64 {
-    state^ += 0x9E3779B97F4A7C15
-    z := state^
-    z = (z ~ (z >> 30)) * 0xBF58476D1CE4E5B9
-    z = (z ~ (z >> 27)) * 0x94D049BB133111EB
-    return z ~ (z >> 31)
-}
-
-@(init)
-init_zobrist :: proc "contextless" () {
-	context = runtime.default_context()
-	seed: u64 = 0x1234_5678_9ABC_DEF0
-
-    // for p in do for sq in 0..<64 do z.pieces[p][sq] = splitmix64(&seed)
-	for &by_type in zobrist.piece {
-		for &squares in by_type {
-			for &key in squares {
-				key = splitmix64(&seed)
-			}
-		}
-	}
-
-    zobrist.side = splitmix64(&seed)
-    
-	for &key in zobrist.castle do key = splitmix64(&seed)
-
-	for f in 0..<8 do zobrist.ep_file[f]  = splitmix64(&seed)
-}
-
-compute_hash :: proc(pos: ^GamePosition) -> u64 {
-	h: u64 = 0
-
-	// Pieces
-	for color in Color {
-		for pt in PieceType {
-			bb := pos.bb[color][pt]
-			for bb != 0 {
-				sq := intrinsics.count_trailing_zeros(bb)
-				h ~= zobrist.piece[color][pt][sq]
-				bb &= bb - 1
-			}
-		}
-	}
-	
-	// Side to move
-	if pos.turn == .Black do h ~= zobrist.side
-
-	// Castling
-	for right in Castling {
-		if right in pos.castling do h ~= zobrist.castle[right]
-	}
-
-	// En passant
-	if pos.en_passant >= 0 do h ~=zobrist.ep_file[pos.en_passant % 8]
-
-	return h
 }
 
 empty_position :: proc() -> GamePosition {
@@ -345,18 +194,9 @@ sq_to_rank_file :: proc(sq: int) -> (int, int) {
 	return (sq / 8), (sq % 8)
 }
 
-rank_file_to_bb :: proc(rank: int, file: int) -> BitBoard {
-	sq: int = rank_file_to_sq(rank, file)
-	return BitBoard(1) << uint(sq)
-}
-
 rank_file_to_sq :: proc(rank: int, file: int) -> int {
 	//return (rank-1)*8 + file
 	return 8 * rank + file
-}
-
-sq_to_bb :: #force_inline proc(sq: int) -> BitBoard {
-	return BitBoard(1) << uint(sq)
 }
 
 mirror_sq :: proc(sq: int) -> int {
@@ -364,25 +204,6 @@ mirror_sq :: proc(sq: int) -> int {
 	rank, file = sq_to_rank_file(sq)
 	rank = 7 - rank
 	return rank_file_to_sq(rank, file)
-}
-
-display_bitboard :: proc(bitboard: BitBoard) {
-	shift: uint
-	mask: BitBoard
-
-	for i in 0 ..< 8 {
-		for j in 0 ..< 8 {
-			shift = uint((7 - i) * 8 + j)
-			mask = BitBoard(1) << shift
-			if (bitboard & mask) > 0 {
-				fmt.print("1")
-			} else {
-				fmt.print("0")
-			}
-		}
-		fmt.print("\n")
-	}
-	fmt.print("\n")
 }
 
 display_position :: proc(position: GamePosition) {
@@ -396,6 +217,119 @@ display_position :: proc(position: GamePosition) {
 		}
 		fmt.print("\n")
 	}
+}
+
+process_fen :: proc(fen: string) -> GamePosition {
+	pos_out: GamePosition
+	pos_out = empty_position()
+
+	col, row: uint
+
+	nchars := len(fen)
+
+	idx := 0
+	col = 1
+	row = 8
+	for {
+		sq := rank_file_to_sq(int(row) - 1, int(col) - 1)
+
+		switch fen[idx] {
+		case '1' ..= '8':
+			col += uint(fen[idx] - 48) - 1
+		case '/':
+			idx += 1
+			continue
+		case:
+			if p, ok := char_to_piece(fen[idx]); ok do put_piece(&pos_out, p, sq)
+		}
+
+		idx += 1
+		col += 1
+
+		if row == 1 && col > 8 do break
+
+		if col == 9 {
+			row = row - 1
+			col = 1
+		}
+
+	}
+
+	//NOTE: Still need to do processing of castling
+	idx += 1
+	if fen[idx] == 'w' {
+		pos_out.turn = .White
+	} else if fen[idx] == 'b' {
+		pos_out.turn = .Black
+	} else {
+		panic("Issue with FEN color")
+	}
+
+	idx += 2
+	pos_out.castling = {}
+	is_castling := true
+	for is_castling {
+		switch fen[idx] {
+		case 'K':
+			pos_out.castling += {.WHITEKINGSIDE}
+		case 'Q':
+			pos_out.castling += {.WHITEQUEENSIDE}
+		case 'k':
+			pos_out.castling += {.BLACKKINGSIDE}
+		case 'q':
+			pos_out.castling += {.BLACKQUEENSIDE}
+		case ' ':
+			is_castling = false
+		}
+		idx += 1
+	}
+
+	is_enpassant := true
+	ep_rank: int
+	ep_file: int
+	for is_enpassant {
+		switch fen[idx] {
+		case '-':
+			pos_out.en_passant = -1
+			is_enpassant = false
+			idx += 1
+		case ' ':
+			pos_out.en_passant = rank_file_to_sq(ep_rank, ep_file)
+			is_enpassant = false
+		case 'a' ..= 'h':
+			ep_file = int(fen[idx]) - int('a')
+		case '1' ..= '8':
+			ep_rank = int(fen[idx]) - int('1')
+		}
+		idx += 1
+	}
+
+	// Since halfmove and movenum can be omitted from some FEN strings
+	if idx < nchars {
+		is_hm := true
+		hm := 0
+		for is_hm {
+			switch fen[idx] {
+			case ' ':
+				is_hm = false
+			case '0' ..= '9':
+				hm = 10 * hm + int(fen[idx]) - int('0')
+			}
+			idx += 1
+		}
+		pos_out.halfmove = hm
+
+		nfen := len(fen)
+		movenum := 0
+		for i in idx ..< nfen {
+			movenum = 10 * movenum + int(fen[i]) - int('0')
+		}
+		pos_out.movenum = movenum
+	}
+
+	pos_out.hash = compute_hash(&pos_out)
+
+	return pos_out
 }
 
 gen_newgame :: proc() -> GamePosition {

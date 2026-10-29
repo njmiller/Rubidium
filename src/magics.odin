@@ -453,20 +453,6 @@ random_u64_fewbits :: proc() -> u64 {
 }
 
 
-count_ones_bb :: proc(b: BitBoard) -> int {
-	/*
-    r : int = 0
-    bp : BitBoard = b
-    for (bp != 0) {
-        r += 1
-        bp = bp & (bp-1)
-    }
-    return r
-    */
-	return int(bits.count_ones(u64(b)))
-}
-
-
 /*
 count_ones_u64 :: proc(b : u64) -> int {
     r : int = 0
@@ -478,12 +464,6 @@ count_ones_u64 :: proc(b : u64) -> int {
     return r
 }
 */
-
-pop_first_bit :: #force_inline proc(bb: ^BitBoard) -> int {
-	sq := int(intrinsics.count_trailing_zeros(bb^))
-	bb^ &= bb^ - 1
-	return sq
-}
 
 index_to_bb :: proc(index: int, bits: int, m: BitBoard) -> BitBoard {
 	// i, j: int

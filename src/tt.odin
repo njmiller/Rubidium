@@ -56,17 +56,6 @@ tt_store :: proc(key: u64, move: Move, score: int, depth: int, bound: Bound, ply
     e^= TTEntry{key, packed, i16(score_to_tt(score, ply)), i8(depth), bound, tt_age}
 }
 
-pack_move :: proc(move: Move) -> u16 {
-    // from | to<<6 | promo<<12 (0 = none)
-
-    from : u16 = auto_cast move.pos_init
-    to : u16 = auto_cast move.pos_final
-
-    promo : u16 = auto_cast move.promotion
-
-    return from | to<<6 | promo<< 12
-}
-
 score_to_tt :: proc(score: int, ply: int) -> int {
     if score > MATE_BOUND do return score + ply
     if score < -MATE_BOUND do return score - ply

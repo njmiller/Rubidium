@@ -9,10 +9,6 @@ INF :: 32000
 MATE :: 31000
 MATE_BOUND :: MATE - MAX_PLY // scores beyond this are mate scores
 
-KILLER_1 :: 900_000
-KILLER_2 :: 800_000
-HISTORY_MAX :: 16384
-
 MAX_PLY :: 128
 MAX_GAME_PLY :: 1024
 
@@ -115,10 +111,6 @@ is_mate_score :: #force_inline proc(s: int) -> bool {
 	return abs(s) > MATE_BOUND
 }
 
-is_quiet :: #force_inline proc(m: Move) -> bool {
-	return !m.is_capture && m.promotion == .Pawn
-}
-
 // Returns the TT score and true if the entry is deep enough and its bound
 // lets us cut at this node
 tt_cutoff :: #force_inline proc(e: ^TTEntry, depth, ply, alpha, beta: int) -> (int, bool) {
@@ -164,46 +156,6 @@ bound_for :: #force_inline proc(score, alpha_orig, beta: int) -> Bound {
 	if score <= alpha_orig do return .Upper
 	if score >= beta do return .Lower
 	return .Exact
-}
-
-// Order: TT move, captures (MVV-LVA, already scored by gen_moves), killers,
-// other quiets by history
-score_moves :: proc(s: ^SearchState, ml: ^MoveList, ply: int, tt_move: u16) {
-	for i in 0..<ml.n {
-		m := ml.moves[i]
-		if pack_move(m) == tt_move {
-			ml.scores[i] = max(int)
-		} else if is_quiet(m) {
-			if move_equal(m, s.killers[ply][0]) do ml.scores[i] = KILLER_1
-			else if move_equal(m, s.killers[ply][1]) do ml.scores[i] = KILLER_2
-			else do ml.scores[i] = s.quiet_history[m.piece.color][m.pos_init][m.pos_final]
-		}
-	}
-}
-
-// Iterates over move list from start to end and finds one with highest
-// score. Swaps it with move in start position so next time we can start at
-// start+1
-pick_next_move :: proc(ml: ^MoveList, start: int) -> Move {
-	best := start
-	for i in start+1..<ml.n {
-		if ml.scores[i] > ml.scores[best] do best = i
-	}
-	ml.moves[start], ml.moves[best] = ml.moves[best], ml.moves[start]
-	ml.scores[start], ml.scores[best] = ml.scores[best], ml.scores[start]
-
-	return ml.moves[start]
-}
-
-store_killer :: proc(s: ^SearchState, ply: int, move: Move) {
-	if move_equal(s.killers[ply][0], move) do return
-	s.killers[ply][1] = s.killers[ply][0]
-	s.killers[ply][0] = move
-}
-
-update_history :: proc(s: ^SearchState, move: Move, bonus: int) {
-	h := &s.quiet_history[move.piece.color][move.pos_init][move.pos_final]
-	h^ += bonus - h^ * abs(bonus) / HISTORY_MAX
 }
 
 // https://en.wikipedia.org/wiki/Negamax
@@ -271,7 +223,7 @@ negamax :: proc(
 	}
 
 	all_moves := gen_moves(pos)
-	score_moves(s, &all_moves, ply, tt_move)
+	score_moves(s, &all_moves, pos, ply, tt_move)
 
 	maxscore := -INF
 	best_move := NULL_MOVE
@@ -382,6 +334,7 @@ quiesce :: proc(s: ^SearchState, pos: ^GamePosition, ply, alpha, beta: int) -> i
 	if best_val >= alpha do alpha = best_val
 
 	ml := gen_moves(pos)
+	mvv_lva(&ml, pos)
 
 	for i in 0..<ml.n {
 		move := pick_next_move(&ml, i)
@@ -416,9 +369,10 @@ search_root :: proc(s: ^SearchState, pos: ^GamePosition, depth: int, prev_best: 
 	defer s.history.len -= 1
 
 	ml := gen_moves(pos)
+	mvv_lva(&ml, pos)
 
-	// Search the previous iteration's best move fitst. This makes alpha-beta
-	// cut much more, and it means a partial iteration still search the best move
+	// Search the previous iteration's best move first. This makes alpha-beta
+	// cut much more, and it means a partial iteration still searches the best move
 	if prev_best != NULL_MOVE {
 		for i in 0..<ml.n {
 			if move_equal(ml.moves[i], prev_best) {

@@ -1,10 +1,7 @@
 package main
 
-import "core:fmt"
 import "core:math/bits"
 import "base:runtime"
-
-CAPTURE_BASE :: 1_000_000
 
 // As minimal of info as possible to construct implement move
 Move :: struct {
@@ -40,18 +37,6 @@ NullMoveInfo :: struct {
 	en_passant: int,
 	halfmove: int,
 	hash: u64,
-}
-
-PerftStats :: struct {
-	nodes:            u64,
-	captures:         u64,
-	en_passant:       u64,
-	castles:          u64,
-	promotions:       u64,
-	checks:           u64,
-	checkmates:       u64,
-	discovery_checks: u64,
-	double_checks:    u64,
 }
 
 knight_moves: [64]BitBoard
@@ -276,15 +261,11 @@ gen_moves :: proc(position: ^GamePosition) -> MoveList {
 		}
 	}
 
-	// gen_castle_move(moves, position)
 	gen_castle_move(&move_list, position)
 
-	// Assign score values to each move based on MVV-LVA
-	// move ordering
-	mvv_lva(&move_list, position)
-
+	// Scores are left unset; callers that need ordering score the list
+	// themselves (see movepick.odin)
 	return move_list
-
 }
 
 //Returns the castling rights that are lost when a move touches sq,
@@ -441,29 +422,6 @@ partition_captures_first :: proc(ml: ^MoveList) -> int {
 	}
 
 	return ncap
-}
-
-mvv_lva :: proc(ml: ^MoveList, pos: ^GamePosition) {
-	// Captures must score at leat CAPTURE_BASE or quiesce will break and
-	// killer move construction will break
-	for i in 0..<ml.n {
-		move := ml.moves[i]
-		score := 0
-
-		if move.is_capture {
-			victim := PieceType.Pawn // used if pos_final is empty for ep
-			if p, ok := pos.board[move.pos_final].?; ok do victim = p.piecetype
-
-			score = CAPTURE_BASE + 10 * int(victim) + int(PieceType.King) - int(move.piece.piecetype)
-		}
-
-		if move.promotion == .Queen {
-			// Treat like winning a queen's worth of material
-			score = max(score, CAPTURE_BASE) + 10 * int(PieceType.Queen)
-		}
-
-		ml.scores[i] = score
-	}
 }
 
 bb_to_moves :: proc(
@@ -708,77 +666,14 @@ undo_move_inplace :: proc(move: Move, info: MoveInfo, position: ^GamePosition) {
 	position.hash = info.hash
 }
 
-opp_color :: #force_inline proc(color: Color) -> Color {
-	if color == .White do return .Black
+pack_move :: proc(move: Move) -> u16 {
+	// from | to<<6 | promo<<12 (0 = none)
 
-	return .White
+	from : u16 = auto_cast move.pos_init
+	to : u16 = auto_cast move.pos_final
+
+	promo : u16 = auto_cast move.promotion
+
+	return from | to<<6 | promo<< 12
 }
 
-perft :: proc(depth: int, position: ^GamePosition, stats: ^PerftStats) {
-	// if depth == 0 do return 1
-	if depth == 0 {
-		stats.nodes += 1
-		return
-	}
-
-	move_list := gen_moves(position)
-
-	for i in 0..<move_list.n {
-		move := move_list.moves[i]
-		info := apply_move_inplace(move, position)
-
-		// if the move didn't leave our king in check, it is legal
-		// if !is_in_check(move.piece.color, position) do nodes += perft(depth - 1, position)
-
-		if !is_in_check(move.piece.color, position) {
-			if depth == 1 {
-				// Only tally leaf-move properties
-				if move.is_capture do stats.captures += 1
-				if info.is_en_passant do stats.en_passant += 1
-				if move.promotion != .Pawn do stats.promotions += 1
-				if info.is_castle do stats.castles += 1
-				if is_in_check(opp_color(move.piece.color), position) do stats.checks += 1
-			}
-			perft(depth - 1, position, stats)
-		}
-
-		undo_move_inplace(move, info, position)
-	}
-
-	return
-}
-
-perft_divide :: proc(depth: int, position: ^GamePosition) -> u64 {
-	if depth <= 0 do return 0
-
-	total_nodes: u64 = 0
-	display_position(position^)
-	move_list := gen_moves(position)
-
-	fmt.println("NMoves:", move_list.n)
-
-	fmt.printf("\n--- Perft Divide Depth %d ---\n", depth)
-	for i in 0..<move_list.n {
-		move := move_list.moves[i]
-		info := apply_move_inplace(move, position)
-
-		if !is_in_check(move.piece.color, position) {
-			stats : PerftStats
-			perft(depth - 1, position, &stats)
-			total_nodes += stats.nodes
-
-			// Print move in UCI format (e.g. e2e4)
-			buf: [5]u8
-			s := move_to_uci(move, &buf)
-			fmt.printf("%s: %d ", s, stats.nodes)
-			fmt.println(move.piece.color, move.piece.piecetype)
-		}
-
-		undo_move_inplace(move, info, position)
-
-	}
-
-	fmt.printf("\nTotal leaf nodes: %d\n", total_nodes)
-
-	return total_nodes
-}
