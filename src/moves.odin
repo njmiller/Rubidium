@@ -1,7 +1,6 @@
 package main
 
 import "core:math/bits"
-import "base:runtime"
 
 // As minimal of info as possible to construct implement move
 Move :: struct {
@@ -23,6 +22,9 @@ MoveInfo :: struct {
 	en_passant:    int,
 	halfmove:      int,
 	hash:          u64,
+	psqt_mid:      [Color]int,
+	psqt_end:      [Color]int,
+	phase:         int,
 }
 
 MoveList :: struct {
@@ -367,7 +369,7 @@ is_in_check :: proc(color: Color, position: ^GamePosition) -> bool {
 	// Handle custom setups with no king (e.q. tests)
 	if king_bb == 0 do return false
 
-	king_sq := bits.count_trailing_zeros(u64(king_bb))
+	king_sq := bits.count_trailing_zeros(king_bb)
 
 	return is_square_attacked(int(king_sq), opp_color(color), position)
 }
@@ -489,6 +491,9 @@ apply_move_inplace :: proc(move: Move, position: ^GamePosition) -> MoveInfo {
 	info.en_passant = position.en_passant
 	info.halfmove = position.halfmove
 	info.hash = position.hash
+	info.psqt_mid = position.psqt_mid
+	info.psqt_end = position.psqt_end
+	info.phase = position.phase
 
 	position.turn = opp_color(us)
 	if us == .Black do position.movenum += 1
@@ -600,25 +605,28 @@ undo_move_inplace :: proc(move: Move, info: MoveInfo, position: ^GamePosition) {
 	// Castling: move the rook back
 	if info.is_castle {
 		rook_from, rook_to := castle_rook_squares(move)
-		move_piece(position, rook_to, rook_from)
+		move_piece_raw(position, Piece{.Rook, us}, rook_to, rook_from)
 	}
 
 	// Remove the promoted piece, the pawn goes back to its origin square
 	if move.promotion != .Pawn {
-		remove_piece(position, move.pos_final)
-		put_piece(position, move.piece, move.pos_init)
+		remove_piece_raw(position, Piece{move.promotion, us}, move.pos_final)
+		put_piece_raw(position, move.piece, move.pos_init)
 	} else {
-		move_piece(position, move.pos_final, move.pos_init)
+		move_piece_raw(position, move.piece, move.pos_final, move.pos_init)
 	}
 
 	// The en passant captured pawn sits next to pos_final, not on it
 	if info.is_capture {
 		capture_sq := info.is_en_passant ? ep_captured_square(move) : move.pos_final
-		put_piece(position, info.capture, capture_sq)
+		put_piece_raw(position, info.capture, capture_sq)
 	}
 
 	// Restore hash last because put_piece/move_piece updates it
 	position.hash = info.hash
+	position.psqt_mid = info.psqt_mid
+	position.psqt_end = info.psqt_end
+	position.phase = info.phase
 }
 
 pack_move :: proc(move: Move) -> u16 {

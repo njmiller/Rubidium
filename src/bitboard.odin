@@ -2,7 +2,6 @@ package main
 
 import "core:fmt"
 import "core:math/bits"
-import "base:intrinsics"
 
 BitBoard :: distinct u64
 
@@ -124,7 +123,7 @@ count_ones_bb :: #force_inline proc "contextless" (b: BitBoard) -> int {
 }
 
 pop_first_bit :: #force_inline proc "contextless" (bb: ^BitBoard) -> int {
-	sq := int(intrinsics.count_trailing_zeros(bb^))
+	sq := int(bits.count_trailing_zeros(bb^))
 	bb^ &= bb^ - 1
 	return sq
 }

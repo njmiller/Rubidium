@@ -1,7 +1,5 @@
 package main
 
-import "base:runtime"
-
 KING_CP :: 100000
 QUEEN_CP :: 900
 ROOK_CP :: 500

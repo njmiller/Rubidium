@@ -152,14 +152,33 @@ piece_to_char :: #force_inline proc(p: Piece) -> u8 {
 	return PIECE_CHARS[int(p.color) * 6 + int(p.piecetype)]
 }
 
-// put_piece/remove_piece/move_piece are the only procedures that should change
-// piece placement: they keep the bitboards, occupancy, mailbox and incremental
-// eval fields in sync
-put_piece :: proc(pos: ^GamePosition, p: Piece, sq: int) {
+// Placement only: bitboard, occupancy, and mailbox. Phase, PSQT, and hash
+// left alone, so these ar eonly for undo_move_inplace, which restores those
+// fields from MoveInfo. Everything else should use put_piece/remove_piece
+put_piece_raw :: #force_inline proc "contextless" (pos: ^GamePosition, p: Piece, sq:int) {
 	sq_bb := sq_to_bb(sq)
 	pos.bb[p.color][p.piecetype] |= sq_bb
 	pos.occupied[p.color] |= sq_bb
 	pos.board[sq] = p
+}
+
+remove_piece_raw :: #force_inline proc "contextless" (pos: ^GamePosition, p: Piece, sq:int) {
+	sq_bb := sq_to_bb(sq)
+	pos.bb[p.color][p.piecetype] &~= sq_bb
+	pos.occupied[p.color] &~= sq_bb
+	pos.board[sq] = nil
+}
+
+move_piece_raw :: #force_inline proc "contextless" (pos: ^GamePosition, p: Piece, from, to: int) {
+	remove_piece_raw(pos, p, from)
+	put_piece_raw(pos, p, to)
+}
+
+// put_piece/remove_piece/move_piece are the only procedures that should change
+// piece placement: they keep the bitboards, occupancy, mailbox and incremental
+// eval fields in sync
+put_piece :: proc(pos: ^GamePosition, p: Piece, sq: int) {
+	put_piece_raw(pos, p, sq)
 
 	pos.phase += PHASE_WEIGHT[p.piecetype]
 	pos.psqt_mid[p.color] += psqt_value_mid(p, sq)
@@ -170,10 +189,7 @@ put_piece :: proc(pos: ^GamePosition, p: Piece, sq: int) {
 
 remove_piece :: proc(pos: ^GamePosition, sq: int) -> Piece {
 	p := pos.board[sq].? or_else panic("remove_piece on empty square")
-	sq_bb := sq_to_bb(sq)
-	pos.bb[p.color][p.piecetype] &~= sq_bb
-	pos.occupied[p.color] &~= sq_bb
-	pos.board[sq] = nil
+	remove_piece_raw(pos, p, sq)
 
 	pos.phase -= PHASE_WEIGHT[p.piecetype]
 	pos.psqt_mid[p.color] -= psqt_value_mid(p, sq)

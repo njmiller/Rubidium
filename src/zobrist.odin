@@ -1,8 +1,5 @@
 package main
 
-import "base:runtime"
-import "base:intrinsics"
-
 Zobrist :: struct {
 	piece :   [Color][PieceType][64]u64,
 	// castle :  [16]u64,
@@ -49,9 +46,8 @@ compute_hash :: proc(pos: ^GamePosition) -> u64 {
 		for pt in PieceType {
 			bb := pos.bb[color][pt]
 			for bb != 0 {
-				sq := intrinsics.count_trailing_zeros(bb)
+				sq := pop_first_bit(&bb)
 				h ~= zobrist.piece[color][pt][sq]
-				bb &= bb - 1
 			}
 		}
 	}
