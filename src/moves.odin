@@ -157,21 +157,16 @@ init_slider_move :: proc(sq: int, occupied: BitBoard, is_rook: bool) -> BitBoard
 	return output
 }
 
-//Magic table stuff is initialized in magics.odin
-get_bishop_moves :: proc(sq: int, occupancy: BitBoard) -> BitBoard {
-	hash: u64
-	hash = u64(occupancy & magic_bishop_table[sq].mask)
-	hash *= magic_bishop_table[sq].magic
-	hash >>= uint(64 - magic_bishop_table[sq].shift)
-	return magic_bishop_table[sq].attacks[hash]
+//Magic table stuff is initialized in magics.odin. magic_index is always within
+//the square's attack table by construction, so skip the bounds check
+get_bishop_moves :: proc(sq: int, occupancy: BitBoard) -> BitBoard #no_bounds_check {
+	m := &magic_bishop_table[sq]
+	return m.attacks[magic_index(m, occupancy)]
 }
 
-get_rook_moves :: proc(sq: int, occupancy: BitBoard) -> BitBoard {
-	hash: u64
-	hash = u64(occupancy & magic_rook_table[sq].mask)
-	hash *= magic_rook_table[sq].magic
-	hash >>= uint(64 - magic_rook_table[sq].shift)
-	return magic_rook_table[sq].attacks[hash]
+get_rook_moves :: proc(sq: int, occupancy: BitBoard) -> BitBoard #no_bounds_check {
+	m := &magic_rook_table[sq]
+	return m.attacks[magic_index(m, occupancy)]
 }
 
 get_queen_moves :: proc(sq: int, occupancy: BitBoard) -> BitBoard {

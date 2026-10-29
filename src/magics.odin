@@ -1,6 +1,5 @@
 package main
 
-import "core:container/queue"
 import "core:fmt"
 import "core:math/bits"
 import "core:math/rand"
@@ -278,38 +277,25 @@ magic_bishop_numbers := [64]u64 {
 	0x43FF9E4EF4CA2C89,
 }
 
+// Total attack entries over all squares: sum of 1 << bits for each square
+ROOK_ATTACK_TABLE_SIZE :: 102400
+BISHOP_ATTACK_TABLE_SIZE :: 5248
+
 magic_table :: struct {
 	mask:    BitBoard,
-	shift:   uint,
 	magic:   u64,
-	attacks: map[u64]BitBoard,
+	shift:   uint,       // right shift that leaves the index: 64 - number of index bits
+	attacks: []BitBoard, // this square's section of rook_attacks/bishop_attacks
 }
 
 magic_bishop_table: [64]magic_table
 magic_rook_table: [64]magic_table
 
-magic_tables_initialized: bool
+rook_attacks: [ROOK_ATTACK_TABLE_SIZE]BitBoard
+bishop_attacks: [BISHOP_ATTACK_TABLE_SIZE]BitBoard
 
-//Populate the global magic bitboard tables
-init_magic_bitboards :: proc() {
-	//The tables are built once at program start (see init_magic_tables_startup
-	//below). Later calls are no-ops so main and tests can safely call this
-	if magic_tables_initialized do return
-	for i in 0 ..< 64 {
-		init_bishop_magic(i)
-		init_rook_magic(i)
-	}
-	magic_tables_initialized = true
-}
-
-//Free all magic bitboard tables
-free_magic_bitboards :: proc() {
-	if !magic_tables_initialized do return
-	for i in 0 ..< 64 {
-		delete(magic_bishop_table[i].attacks)
-		delete(magic_rook_table[i].attacks)
-	}
-	magic_tables_initialized = false
+magic_index :: #force_inline proc(m: ^magic_table, occupancy: BitBoard) -> u64 {
+	return (u64(occupancy & m.mask) * m.magic) >> m.shift
 }
 
 //The magic tables are global and used by every part of the engine and by any
@@ -319,7 +305,13 @@ free_magic_bitboards :: proc() {
 @(init)
 init_magic_tables_startup :: proc "contextless" () {
 	context = runtime.default_context()
-	init_magic_bitboards()
+
+	rook_offset, bishop_offset := 0, 0
+	for sq in 0 ..< 64 {
+		rook_offset += init_slider_magic(&magic_rook_table[sq], rook_attacks[:], rook_offset, sq, true)
+		bishop_offset += init_slider_magic(&magic_bishop_table[sq], bishop_attacks[:], bishop_offset, sq, false)
+	}
+	assert(rook_offset == ROOK_ATTACK_TABLE_SIZE && bishop_offset == BISHOP_ATTACK_TABLE_SIZE)
 }
 
 //Should be same as rmask and bmask (though input differs by 1, i.e. this code starts at sq=1, while
@@ -340,99 +332,25 @@ get_rook_mask :: proc(sq: int) -> BitBoard {
 	return init_slider_move(sq, BitBoard(0), true) & ~edge_mask
 }
 
-init_bishop_magic :: proc(sq: int) {
-	shift: int = magic_bishop_shifts[sq]
-	magic: u64 = magic_bishop_numbers[sq]
-	mask: BitBoard = get_bishop_mask(sq)
-	count: int = 1 << uint(shift)
-	attacks: queue.Queue(BitBoard)
-	permutations: queue.Queue(BitBoard)
-	// occ: BitBoard
-	permutation, attack: BitBoard
+//Fill one square's magic entry, using backing[offset:] for its attack table.
+//Returns the number of entries used so the caller can advance the offset
+init_slider_magic :: proc(m: ^magic_table, backing: []BitBoard, offset: int, sq: int, is_rook: bool) -> int {
+	bits := is_rook ? magic_rook_shifts[sq] : magic_bishop_shifts[sq]
+	count := 1 << uint(bits)
 
-	queue.init(&permutations)
-	queue.init(&attacks)
-	defer queue.destroy(&permutations)
-	defer queue.destroy(&attacks)
+	m.mask = is_rook ? get_rook_mask(sq) : get_bishop_mask(sq)
+	m.magic = is_rook ? magic_rook_numbers[sq] : magic_bishop_numbers[sq]
+	m.shift = uint(64 - bits)
+	m.attacks = backing[offset:offset + count]
 
-	//Loop over all possible permutations of the occupancy, generate
-	//the moves, and add them to the queue
+	//Every occupancy subset of the mask maps to an index. A valid magic only
+	//lets subsets with the same attack set share an index
 	for i in 0 ..< count {
-		//permutation = get_permutation(mask, i)
-		permutation = index_to_bb(i, shift, mask)
-		attack = init_slider_move(sq, permutation, false)
-		queue.push_back(&permutations, permutation)
-		queue.push_back(&attacks, attack)
+		occupancy := index_to_bb(i, bits, m.mask)
+		m.attacks[magic_index(m, occupancy)] = init_slider_move(sq, occupancy, is_rook)
 	}
 
-	update_magic_table(&magic_bishop_table[sq], magic, mask, shift, &permutations, &attacks)
-}
-
-init_rook_magic :: proc(sq: int) {
-	shift: int = magic_rook_shifts[sq]
-	magic: u64 = magic_rook_numbers[sq]
-	mask: BitBoard = get_rook_mask(sq)
-	count: int = 1 << uint(shift)
-	attacks: queue.Queue(BitBoard)
-	permutations: queue.Queue(BitBoard)
-	// occ: BitBoard
-	permutation, attack: BitBoard
-
-	queue.init(&permutations)
-	queue.init(&attacks)
-	defer queue.destroy(&permutations)
-	defer queue.destroy(&attacks)
-
-	//Loop over all possible permutations of the occupancy, generate
-	//the moves, and add them to the queue
-	for i in 0 ..< count {
-		//permutation = get_permutation(mask, i)
-		permutation = index_to_bb(i, shift, mask)
-		attack = init_slider_move(sq, permutation, true)
-		queue.push_back(&permutations, permutation)
-		queue.push_back(&attacks, attack)
-	}
-
-	update_magic_table(&magic_rook_table[sq], magic, mask, shift, &permutations, &attacks)
-}
-
-//NJM: change shift to uint
-update_magic_table :: proc(
-	magic_ptr: ^magic_table,
-	magic: u64,
-	mask: BitBoard,
-	shift: int,
-	permutations: ^queue.Queue(BitBoard),
-	attacks: ^queue.Queue(BitBoard),
-) {
-	perm, att: BitBoard
-	hash: u64
-	magic_ptr.mask = mask
-	magic_ptr.magic = magic
-	magic_ptr.shift = uint(shift)
-	magic_ptr.attacks = make(map[u64]BitBoard)
-
-	for queue.len(permutations^) != 0 {
-		perm = queue.pop_back(permutations)
-		att = queue.pop_back(attacks)
-		hash = u64(perm) * magic >> uint(64 - shift)
-		magic_ptr.attacks[hash] = att
-	}
-}
-
-//Get the permutation associated with the input index
-//This is same as index_to_bb
-get_permutation :: proc(mask: BitBoard, index: BitBoard) -> BitBoard {
-
-	mask_tmp: BitBoard = mask
-	// index_tmp: BitBoard = index
-	output: BitBoard = 0
-
-	for mask_tmp != 0 {
-		mask_tmp &= mask_tmp - 1
-	}
-
-	return output
+	return count
 }
 
 
@@ -607,7 +525,7 @@ find_magic :: proc(sq: int, m: int, bishop: bool) -> u64 {
 	//permutation
 	for i in 0 ..< nperm {
 		b[i] = index_to_bb(i, n, mask)
-		a[i] = bishop ? get_bishop_moves(sq, b[i]) : get_rook_moves(sq, b[i])
+		a[i] = init_slider_move(sq, b[i], !bishop)
 	}
 
 	//Randomly determine a magic number and check to see if it is valid
