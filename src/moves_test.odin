@@ -271,3 +271,43 @@ test_perft_cpw_pos6 :: proc(t: ^testing.T) {
 	expect_perft(t, &pos, 2, 2079, -1, -1, -1, -1, -1)
 	expect_perft(t, &pos, 3, 89890, -1, -1, -1, -1, -1)
 }
+
+// Captures-only generation must produce exactly the moves of full generation
+// that score as captures (captures, capture-promotions and queen promotions),
+// in the same order. Checked at every node of a shallow tree walk
+@(test)
+test_gen_captures_only :: proc(t: ^testing.T) {
+	check_node :: proc(t: ^testing.T, pos: ^GamePosition, depth: int) {
+		all, caps: MoveList = ---, ---
+		gen_moves(pos, &all)
+		gen_moves(pos, &caps, captures_only = true)
+
+		n := 0
+		for i in 0..<all.n {
+			m := all.moves[i]
+			if mvv_lva_score(m, pos) < CAPTURE_BASE do continue
+			if !testing.expect(t, n < caps.n && caps.moves[n] == m, "captures-only list differs from filtered full list") do return
+			n += 1
+		}
+		testing.expect_value(t, caps.n, n)
+
+		if depth == 0 do return
+		for i in 0..<all.n {
+			info, legal := try_move(all.moves[i], pos)
+			if !legal do continue
+			check_node(t, pos, depth - 1)
+			undo_move_inplace(all.moves[i], info, pos)
+		}
+	}
+
+	fens := []string{
+		"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1", // kiwipete
+		"8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",                            // en passant
+		"r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",     // promotions
+		"n1n5/PPPk4/8/8/8/8/4Kppp/5N1N b - - 0 1",                              // capture-promotions
+	}
+	for fen in fens {
+		pos := process_fen(fen)
+		check_node(t, &pos, 3)
+	}
+}

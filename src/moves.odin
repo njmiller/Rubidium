@@ -214,7 +214,9 @@ get_pawn_moves :: proc(
 	return moves_bb, captures_bb
 }
 
-gen_moves :: proc(position: ^GamePosition, move_list: ^MoveList) {
+// captures_only generates just the moves quiesce searches: all captures
+// (including en passant and capture-promotions) plus non-capture queen promotions
+gen_moves :: proc(position: ^GamePosition, move_list: ^MoveList, captures_only := false) {
 	// This is better than the separate procedures because we only
 	// have to loop over a single bitboard
 	move_list.n = 0
@@ -248,14 +250,18 @@ gen_moves :: proc(position: ^GamePosition, move_list: ^MoveList) {
 				}
 				targets &~= own
 				captures_bb = targets & enemy
-				moves_bb = targets &~ enemy
+				if !captures_only do moves_bb = targets &~ enemy
 			}
 
-			bb_to_moves(move_list, sq, Piece{pt, us}, moves_bb, captures_bb)
+			if pt == .Pawn {
+				bb_to_pawn_moves(move_list, sq, Piece{pt, us}, moves_bb, captures_bb, captures_only)
+			} else {
+				bb_to_moves(move_list, sq, Piece{pt, us}, moves_bb, captures_bb)
+			}
 		}
 	}
 
-	gen_castle_move(move_list, position)
+	if !captures_only do gen_castle_move(move_list, position)
 
 	// Scores are left unset; callers that need ordering score the list
 	// themselves (see movepick.odin)
@@ -425,12 +431,6 @@ bb_to_moves :: proc(
 	moves_bb: BitBoard,
 	captures_bb: BitBoard,
 ) {
-
-	if piece.piecetype == .Pawn {
-		bb_to_pawn_moves(move_list, sq, piece, moves_bb, captures_bb)
-		return
-	}
-
 	bb_tmp: BitBoard
 	sq_fin: int
 	move: Move
@@ -452,24 +452,32 @@ bb_to_moves :: proc(
 }
 
 //Convert pawn move/capture bitboards into Move structs. Promotion squares
-//expand into one move per promotion piece (Q, R, B, N)
+//expand into one move per promotion piece (Q, R, B, N). With captures_only,
+//the only non-captures kept are pushes that promote, and those are queen only
 bb_to_pawn_moves :: proc(
 	move_list: ^MoveList,
 	sq: int,
 	piece: Piece,
 	moves_bb: BitBoard,
 	captures_bb: BitBoard,
+	captures_only: bool,
 ) {
 	bb_tmp: BitBoard
 	sq_fin: int
 
 	promotion_pieces := [4]PieceType{.Queen, .Rook, .Bishop, .Knight}
-
+	quiet_promos := promotion_pieces[:]
 	bb_tmp = moves_bb
+
+	if captures_only {
+		quiet_promos = promotion_pieces[:1]
+		bb_tmp &= RANK_1 | RANK_8
+	}
+
 	for bb_tmp != 0 {
 		sq_fin = pop_first_bit(&bb_tmp)
 		if sq_fin < 8 || sq_fin >= 56 {
-			for promo in promotion_pieces {
+			for promo in quiet_promos {
 				move := Move{sq, sq_fin, piece, false, promo}
 				add_move_to_list(move_list, move)
 			}

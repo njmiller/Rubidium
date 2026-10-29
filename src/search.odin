@@ -334,15 +334,13 @@ quiesce :: proc(s: ^SearchState, pos: ^GamePosition, ply, alpha, beta: int) -> i
 	if best_val >= beta do return best_val
 	if best_val >= alpha do alpha = best_val
 
+	// Only captures and queen promotions
 	ml : MoveList = ---
-	gen_moves(pos, &ml)
+	gen_moves(pos, &ml, captures_only = true)
 	mvv_lva(&ml, pos)
 
 	for i in 0..<ml.n {
 		move := pick_next_move(&ml, i)
-
-		// Only captures and queen promotions
-		if ml.scores[i] < CAPTURE_BASE do break
 
 		mi, legal := try_move(move, pos)
 		if !legal do continue
