@@ -41,9 +41,9 @@ score_moves :: proc(s: ^SearchState, ml: ^MoveList, pos: ^GamePosition, ply: int
 		switch {
 		case pack_move(m) == tt_move:            ml.scores[i] = max(int)
 		case !is_quiet(m):                       ml.scores[i] = mvv_lva_score(m, pos)
-		case move_equal(m, s.killers[ply][0]):   ml.scores[i] = KILLER_1
-		case move_equal(m, s.killers[ply][1]):   ml.scores[i] = KILLER_2
-		case:                                    ml.scores[i] = s.quiet_history[m.piece.color][m.pos_init][m.pos_final]
+		case move_equal(m, killers[ply][0]):     ml.scores[i] = KILLER_1
+		case move_equal(m, killers[ply][1]):     ml.scores[i] = KILLER_2
+		case:                                    ml.scores[i] = quiet_history[m.piece.color][m.pos_init][m.pos_final]
 		}
 	}
 }
@@ -63,12 +63,12 @@ pick_next_move :: proc(ml: ^MoveList, start: int) -> Move {
 }
 
 store_killer :: proc(s: ^SearchState, ply: int, move: Move) {
-	if move_equal(s.killers[ply][0], move) do return
-	s.killers[ply][1] = s.killers[ply][0]
-	s.killers[ply][0] = move
+	if move_equal(killers[ply][0], move) do return
+	killers[ply][1] = killers[ply][0]
+	killers[ply][0] = move
 }
 
 update_history :: proc(s: ^SearchState, move: Move, bonus: int) {
-	h := &s.quiet_history[move.piece.color][move.pos_init][move.pos_final]
+	h := &quiet_history[move.piece.color][move.pos_init][move.pos_final]
 	h^ += bonus - h^ * abs(bonus) / HISTORY_MAX
 }

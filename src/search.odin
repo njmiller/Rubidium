@@ -43,9 +43,10 @@ SearchState :: struct {
 	history : History,
 	start: time.Tick,
 	limits: SearchLimits,
-	killers: [MAX_PLY][2]Move,
-	quiet_history: [Color][64][64]int,
 }
+
+killers: [MAX_PLY][2]Move
+quiet_history: [Color][64][64]int
 
 History :: struct {
 	keys: [MAX_GAME_PLY + MAX_PLY]u64,
@@ -449,6 +450,9 @@ search :: proc(pos: ^GamePosition, game_history: ^History, limits: SearchLimits)
 	s.history = game_history^
 	s.start = time.tick_now()
 	s.limits = limits
+
+	killers = NULL_MOVE
+	for &side in quiet_history do for &from in side do for &h in from do h /= 2
 
 	tt_age += 1
 
