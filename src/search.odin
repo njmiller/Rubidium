@@ -311,11 +311,11 @@ negamax :: proc(
 		if alpha >= beta {
 			if quiet {
 				bonus := min(depth * depth, HISTORY_MAX)
-				store_killer(s, ply, move)
-				update_history(s, move, bonus)
+				store_killer(ply, move)
+				update_history(move, bonus)
 
 				// Penalize quiets tried before cutoff
-				for j in 0..<n_quiets-1 do update_history(s, quiets_tried[j], -bonus)
+				for j in 0..<n_quiets-1 do update_history(quiets_tried[j], -bonus)
 			}
 			break
 		}

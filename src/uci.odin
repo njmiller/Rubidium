@@ -125,6 +125,7 @@ handle_isready :: proc() {
 handle_ucinewgame :: proc() {
 	stop_search()
 	tt_clear()
+	quiet_history = {}
 
 	// Reset engine state for new game
 	engine.pos = gen_newgame()

@@ -62,13 +62,13 @@ pick_next_move :: proc(ml: ^MoveList, start: int) -> Move {
 	return ml.moves[start]
 }
 
-store_killer :: proc(s: ^SearchState, ply: int, move: Move) {
+store_killer :: proc(ply: int, move: Move) {
 	if move_equal(killers[ply][0], move) do return
 	killers[ply][1] = killers[ply][0]
 	killers[ply][0] = move
 }
 
-update_history :: proc(s: ^SearchState, move: Move, bonus: int) {
+update_history :: proc(move: Move, bonus: int) {
 	h := &quiet_history[move.piece.color][move.pos_init][move.pos_final]
 	h^ += bonus - h^ * abs(bonus) / HISTORY_MAX
 }
