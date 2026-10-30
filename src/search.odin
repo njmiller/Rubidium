@@ -203,6 +203,11 @@ negamax :: proc(
 		}
 	}
 
+	// Internal iterative reduction: with no TT move to search first, move
+	// ordering is poor, so spend less effort here
+	depth := depth
+	if tt_move == 0 && depth >= 4 do depth -= 1
+
 	pv_node := beta - alpha > 1
 	can_prune_node := !pv_node && !in_check
 
