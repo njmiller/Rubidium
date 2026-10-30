@@ -43,6 +43,7 @@ SearchState :: struct {
 	history : History,
 	start: time.Tick,
 	limits: SearchLimits,
+	eval_stack: [MAX_PLY + 2]int
 }
 
 killers: [MAX_PLY][2]Move
@@ -134,9 +135,9 @@ tt_cutoff :: #force_inline proc(e: ^TTEntry, depth, ply, alpha, beta: int) -> (i
 
 // Reverse futility pruning: at shallow depth, if static eval beats beta by a
 // depth-scaled margin, assume the opponent can't recover
-rfp_ok :: #force_inline proc(depth, static_eval, beta: int) -> bool {
+rfp_ok :: #force_inline proc(depth, static_eval, beta: int, improving: bool) -> bool {
 	return depth <= RFP_MAX_DEPTH && !is_mate_score(beta) &&
-		static_eval - RFP_MARGIN * depth >= beta
+		static_eval - RFP_MARGIN * (depth - int(improving)) >= beta
 }
 
 // Null move pruning needs enough depth, an eval already above beta, and
@@ -153,14 +154,16 @@ futile :: #force_inline proc(depth, static_eval, alpha: int) -> bool {
 
 // Late move pruning: at shallow depth, one enough moves have been tries,
 // the remaining quiets (ordered last by history) rarely matter
-lmp_ok :: #force_inline proc(depth: int, legal_moves: int) -> bool {
-	return depth <= LMP_MAX_DEPTH && legal_moves > 3 + depth * depth
+lmp_ok :: #force_inline proc(depth: int, legal_moves: int, improving: bool) -> bool {
+	limit := 3 + depth * depth
+	return depth <= LMP_MAX_DEPTH && legal_moves > limit
 }
 
 // Late move reduction, reduced less for moves with good history. Always
 // leaves at least one ply of depth
-lmr_reduction :: #force_inline proc(depth, move_num, order_score: int) -> int {
+lmr_reduction :: #force_inline proc(depth, move_num, order_score: int, improving: bool) -> int {
 	r := lmr_table[min(depth, 63)][min(move_num, 63)] - order_score / 8192
+	// if !improving do r += 1
 	return clamp(r, 0, depth - 2)
 }
 
@@ -223,7 +226,10 @@ negamax :: proc(
 	// Static eval for pruning decisions. Not meaningful when in check
 	static_eval := in_check ? -INF : eval_position(pos)
 
-	if can_prune_node && rfp_ok(depth, static_eval, beta) do return static_eval
+	s.eval_stack[ply] = static_eval
+	improving := !in_check && ply >= 2 && static_eval > s.eval_stack[ply - 2]
+
+	if can_prune_node && rfp_ok(depth, static_eval, beta, improving) do return static_eval
 
 	if can_prune_node && allow_null && null_move_ok(pos, depth, static_eval, beta) {
 		R := 3 + depth / 6
@@ -263,7 +269,7 @@ negamax :: proc(
 		can_prune := can_prune_node && quiet && !gives_check &&
 			legal_moves > 1 && maxscore > -MATE_BOUND
 
-		if can_prune && (futile(depth, static_eval, alpha) || lmp_ok(depth, legal_moves)) {
+		if can_prune && (futile(depth, static_eval, alpha) || lmp_ok(depth, legal_moves, improving)) {
 			undo_move_inplace(move, mi, pos)
 			continue
 		}
@@ -277,7 +283,7 @@ negamax :: proc(
 			is_killer := all_moves.scores[i] >= KILLER_2 && all_moves.scores[i] < CAPTURE_BASE
 
 			if depth >= 3 && legal_moves >= 4 && quiet && !is_killer && !in_check && !gives_check {
-				r = lmr_reduction(depth, legal_moves, all_moves.scores[i])
+				r = lmr_reduction(depth, legal_moves, all_moves.scores[i], improving)
 			}
 
 			// Reduced depth, null window
