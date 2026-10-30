@@ -24,6 +24,8 @@ RFP_MARGIN :: 80 // centipawns per ply of remaining depth
 ASP_MIN_DEPTH :: 5
 ASP_WINDOW :: 25 // centipawns
 
+LMP_MAX_DEPTH :: 8
+
 lmr_table: [64][64]int
 
 stop_flag : bool
@@ -148,6 +150,12 @@ futile :: #force_inline proc(depth, static_eval, alpha: int) -> bool {
 	return depth <= FP_MAX_DEPTH && static_eval + FP_BASE + FP_MARGIN * depth <= alpha
 }
 
+// Late move pruning: at shallow depth, one enough moves have been tries,
+// the remaining quiets (ordered last by history) rarely matter
+lmp_ok :: #force_inline proc(depth: int, legal_moves: int) -> bool {
+	return depth <= LMP_MAX_DEPTH && legal_moves > 3 + depth * depth
+}
+
 // Late move reduction, reduced less for moves with good history. Always
 // leaves at least one ply of depth
 lmr_reduction :: #force_inline proc(depth, move_num, order_score: int) -> int {
@@ -254,7 +262,7 @@ negamax :: proc(
 		can_prune := can_prune_node && quiet && !gives_check &&
 			legal_moves > 1 && maxscore > -MATE_BOUND
 
-		if can_prune && futile(depth, static_eval, alpha) {
+		if can_prune && (futile(depth, static_eval, alpha) || lmp_ok(depth, legal_moves)) {
 			undo_move_inplace(move, mi, pos)
 			continue
 		}
