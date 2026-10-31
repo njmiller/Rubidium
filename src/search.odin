@@ -156,6 +156,7 @@ futile :: #force_inline proc(depth, static_eval, alpha: int) -> bool {
 // the remaining quiets (ordered last by history) rarely matter
 lmp_ok :: #force_inline proc(depth: int, legal_moves: int, improving: bool) -> bool {
 	limit := 3 + depth * depth
+	// limit := improving ? 3 + depth * depth : 2 + depth * depth / 2
 	return depth <= LMP_MAX_DEPTH && legal_moves > limit
 }
 
@@ -163,7 +164,8 @@ lmp_ok :: #force_inline proc(depth: int, legal_moves: int, improving: bool) -> b
 // leaves at least one ply of depth
 lmr_reduction :: #force_inline proc(depth, move_num, order_score: int, improving: bool) -> int {
 	r := lmr_table[min(depth, 63)][min(move_num, 63)] - order_score / 8192
-	// if !improving do r += 1
+	if !improving && r > 0 do r += 1
+	// if improving do r -= 1
 	return clamp(r, 0, depth - 2)
 }
 
