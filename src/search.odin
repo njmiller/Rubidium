@@ -366,6 +366,7 @@ quiesce :: proc(s: ^SearchState, pos: ^GamePosition, ply, alpha, beta: int) -> i
 
 	for i in 0..<ml.n {
 		move := pick_next_move(&ml, i)
+		if !see_ge(pos, move, 0) do continue
 
 		mi, legal := try_move(move, pos)
 		if !legal do continue
