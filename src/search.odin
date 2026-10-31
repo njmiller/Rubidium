@@ -26,6 +26,10 @@ ASP_WINDOW :: 25 // centipawns
 
 LMP_MAX_DEPTH :: 8
 
+SEE_MAX_DEPTH :: 8
+SEE_QUIET_MARGIN :: 20 // centipawns per ply of depth, squared
+SEE_CAPTURE_MARGIN :: 90 // centipawns per ply of depth
+
 lmr_table: [64][64]int
 
 stop_flag : bool
@@ -160,6 +164,12 @@ lmp_ok :: #force_inline proc(depth: int, legal_moves: int, improving: bool) -> b
 	return depth <= LMP_MAX_DEPTH && legal_moves > limit
 }
 
+// SEE pruning: at shallow depth, skip moves that lose more material than 
+// the remaining depth is likely to win back
+see_threshold :: #force_inline proc(depth: int, quiet: bool) -> int {
+	return quiet ? -SEE_QUIET_MARGIN * depth * depth : -SEE_CAPTURE_MARGIN * depth
+}
+
 // Late move reduction, reduced less for moves with good history. Always
 // leaves at least one ply of depth
 lmr_reduction :: #force_inline proc(depth, move_num, order_score: int, improving: bool) -> int {
@@ -260,11 +270,24 @@ negamax :: proc(
 		move := pick_next_move(&all_moves, i)
 		quiet := is_quiet(move)
 
+		// Captures that failed SEE >= 0 in score_moves score below zero. Only
+		// thoes can fail the weaker pruning threshold
+		bad_capture := !quiet && all_moves.scores[i] < 0
+
+		see_prune := bad_capture && can_prune_node && depth <= SEE_MAX_DEPTH && 
+			legal_moves > 0 && maxscore > -MATE_BOUND &&
+			!see_ge(pos, move, see_threshold(depth, false))
+
 		mi, legal := try_move(move, pos)
 		if !legal do continue
 
 		legal_moves += 1
 		gives_check := is_in_check(pos.turn, pos) // pos.turn is opponent now
+
+		if see_prune && !gives_check {
+			undo_move_inplace(move, mi, pos)
+			continue
+		}
 
 		// Shallow-depth pruning of quiet moves. Never prune the first move,
 		// and stop pruning if every line searched so far gets us mated
