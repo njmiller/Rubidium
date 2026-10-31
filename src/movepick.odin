@@ -1,6 +1,7 @@
 package main
 
 CAPTURE_BASE :: 1_000_000
+BAD_CAPTURE :: -2 * CAPTURE_BASE
 
 KILLER_1 :: 900_000
 KILLER_2 :: 800_000
@@ -10,8 +11,9 @@ is_quiet :: #force_inline proc(m: Move) -> bool {
 	return !m.is_capture && m.promotion == .Pawn
 }
 
-// Captures and queen promotions must score at least CAPTURE_BASE or quiesce
-// and the killer detection in LMR will break. Other moves score 0
+// Captures and queen promotions must score at least CAPTURE_BASE in this
+// function or quiesce and the killer detection in LMR will break.
+// Other moves score 0.
 mvv_lva_score :: #force_inline proc(move: Move, pos: ^GamePosition) -> int {
 	score := 0
 
@@ -40,7 +42,9 @@ score_moves :: proc(s: ^SearchState, ml: ^MoveList, pos: ^GamePosition, ply: int
 		m := ml.moves[i]
 		switch {
 		case pack_move(m) == tt_move:            ml.scores[i] = max(int)
-		case !is_quiet(m):                       ml.scores[i] = mvv_lva_score(m, pos)
+		case !is_quiet(m):
+			ml.scores[i] = mvv_lva_score(m, pos)
+			if !see_ge(pos, m, 0) do ml.scores[i] += BAD_CAPTURE
 		case move_equal(m, killers[ply][0]):     ml.scores[i] = KILLER_1
 		case move_equal(m, killers[ply][1]):     ml.scores[i] = KILLER_2
 		case:                                    ml.scores[i] = quiet_history[m.piece.color][m.pos_init][m.pos_final]

@@ -102,14 +102,3 @@ see_ge :: proc(pos: ^GamePosition, move: Move, threshold: int) -> bool {
 
 	return res == 1
 }
-
-// Captures that lose material by SEE. Taking an equal or more valuable piece
-// can't lose, so those skip the full exchange
-losing_capture :: #force_inline proc(pos: ^GamePosition, m: Move) -> bool {
-	victim := PieceType.Pawn // en passant and non-capture promotions
-	if p, ok := pos.board[m.pos_final].?; ok do victim = p.piecetype
-
-	if SEE_VALUE[victim] >= SEE_VALUE[m.piece.piecetype] do return false
-
-	return !see_ge(pos, m, 0)
-}
