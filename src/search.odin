@@ -372,14 +372,41 @@ quiesce :: proc(s: ^SearchState, pos: ^GamePosition, ply, alpha, beta: int) -> i
 
 	if should_stop() do return 0
 
-	static_eval := eval_position(pos)
+	if ply >= MAX_PLY do return eval_position(pos)
 
-	if ply >= MAX_PLY do return static_eval
-
-	best_val := static_eval
 	alpha := alpha
+	alpha_orig := alpha
+	pv_node := beta - alpha > 1
 
-	if best_val >= beta do return best_val
+	// Transposition table probe. Any stored depth is deep enough here
+	tt_move: u16 = 0
+	e, hit := tt_probe(pos.hash)
+	if hit {
+		tt_move = e.move
+		if !pv_node {
+			if tt_score, cut := tt_cutoff(e, 0, ply, alpha, beta); cut do return tt_score
+		}
+	}
+
+	static_eval := eval_position(pos)
+	best_val := static_eval
+
+	// A TT bound is a better estimate than the static eval when it points
+	// the right way
+	if hit {
+		tt_score := score_from_tt(int(e.score), ply)
+		if (e.bound == .Lower && tt_score > best_val) ||
+		   (e.bound == .Upper && tt_score < best_val) ||
+		   e.bound == .Exact {
+			best_val = tt_score
+		}
+	}
+
+	if best_val >= beta {
+		if !hit do tt_store(pos.hash, NULL_MOVE, best_val, 0, .Lower, ply)
+		return best_val
+	}
+	// if best_val >= beta do return best_val
 	if best_val >= alpha do alpha = best_val
 
 	// Only captures and queen promotions
@@ -387,6 +414,17 @@ quiesce :: proc(s: ^SearchState, pos: ^GamePosition, ply, alpha, beta: int) -> i
 	gen_moves(pos, &ml, captures_only = true)
 	mvv_lva(&ml, pos)
 
+	// The TT move is only in the list if it is a capture or queen promotion
+	if tt_move != 0 {
+		for i in 0..<ml.n {
+			if pack_move(ml.moves[i]) == tt_move {
+				ml.scores[i] = max(int)
+				break
+			}
+		}
+	}
+
+	best_move := NULL_MOVE
 	for i in 0..<ml.n {
 		move := pick_next_move(&ml, i)
 		if !see_ge(pos, move, 0) do continue
@@ -397,9 +435,20 @@ quiesce :: proc(s: ^SearchState, pos: ^GamePosition, ply, alpha, beta: int) -> i
 		score := -quiesce(s, pos, ply+1, -beta, -alpha)
 		undo_move_inplace(move, mi, pos)
 
-		if score >= beta do return score
-		if score > best_val do best_val = score
-		if score > alpha do alpha = score
+		if score > best_val {
+			best_val = score
+			if score > alpha {
+				alpha = score
+				best_move = move
+			}
+		}
+		if alpha >= beta do break
+	}
+
+	// Don't let a depth 0 result replace a main search entry for this position.
+	// The slot is checked again because the search below may have reused it
+	if !should_stop() && (e.key != pos.hash || e.depth <= 0) {
+		tt_store(pos.hash, best_move, best_val, 0, bound_for(best_val, alpha_orig, beta), ply)
 	}
 
 	return best_val
