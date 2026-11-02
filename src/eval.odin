@@ -32,6 +32,35 @@ ROOK_OPEN_EG :: 10
 ROOK_SEMI_MG :: 12
 ROOK_SEMI_EG :: 6
 
+// Number of attacked squares at which mobility scores 0. Centering on typical
+// counts keeps the term from shifting the overall material balance
+MOBILITY_BASE := [PieceType]int{
+    .Pawn = 0,
+    .Knight = 4,
+    .Bishop = 6,
+    .Rook = 7,
+    .Queen = 13,
+    .King = 0,
+}
+
+MOBILITY_MG := [PieceType]int{
+    .Pawn = 0,
+    .Knight = 4,
+    .Bishop = 5,
+    .Rook = 2,
+    .Queen = 1,
+    .King = 0,
+}
+
+MOBILITY_EG := [PieceType]int{
+    .Pawn = 0,
+    .Knight = 4,
+    .Bishop = 5,
+    .Rook = 4,
+    .Queen = 2,
+    .King = 0,
+}
+
 GAME_PHASE :: enum u8 {
     Mid,
     End,
@@ -254,6 +283,14 @@ init_pawn_masks :: proc "contextless" () {
     }
 }
 
+// Squares attacked by parns of the given color
+pawn_attacks_bb :: #force_inline proc(pawns: BitBoard, color: Color) -> BitBoard {
+    if color == .White {
+        return ((pawns << 7) & ~FILE_H) | ((pawns << 9) & ~FILE_A)
+    }
+    return ((pawns >> 9) & ~FILE_H) | ((pawns >> 7) & ~FILE_A)
+}
+
 eval_pawns :: proc(pos: ^GamePosition, color: Color) -> (mg: int, eg: int) {
     ours := pos.bb[color][.Pawn]
     theirs := pos.bb[opp_color(color)][.Pawn]
@@ -306,6 +343,38 @@ eval_rooks :: proc(pos: ^GamePosition, color: Color) -> (mg: int, eg: int) {
     return
 }
 
+eval_mobility :: proc(pos: ^GamePosition, color: Color) -> (mg: int, eg: int) {
+    them := opp_color(color)
+    occ := all_occupied(pos)
+
+    // Squares a piece can usefully reach: notout own pieces, not covered by enemy pawns
+    area := ~pos.occupied[color] & ~pawn_attacks_bb(pos.bb[them][.Pawn], them)
+
+    for pt in PieceType {
+        if pt == .Pawn || pt == .King do continue
+
+        bb := pos.bb[color][pt]
+        for bb != 0 {
+            sq := pop_first_bit(&bb)
+
+            attacks: BitBoard
+            switch pt {
+                case .Knight: attacks = knight_moves[sq]
+                case .Bishop: attacks = get_bishop_moves(sq, occ)
+                case .Rook: attacks = get_rook_moves(sq, occ)
+                case .Queen: attacks = get_queen_moves(sq, occ)
+                case .Pawn, .King:
+            }
+
+            n := count_ones_bb(attacks & area) - MOBILITY_BASE[pt]
+            mg += MOBILITY_MG[pt] * n
+            eg += MOBILITY_EG[pt] * n
+        }
+    }
+
+    return
+}
+
 eval_position :: proc(pos: ^GamePosition) -> int {
     mid_score := pos.psqt_mid[.White] - pos.psqt_mid[.Black]
     end_score := pos.psqt_end[.White] - pos.psqt_end[.Black]
@@ -316,11 +385,17 @@ eval_position :: proc(pos: ^GamePosition) -> int {
     w_rmg, w_reg := eval_rooks(pos, .White)
     b_rmg, b_reg := eval_rooks(pos, .Black)
 
+    w_mmg, w_meg := eval_mobility(pos, .White)
+    b_mmg, b_meg := eval_mobility(pos, .Black)
+
     mid_score += w_mg - b_mg
     end_score += w_eg - b_eg
 
     mid_score += w_rmg - b_rmg
     end_score += w_reg - b_reg
+
+    mid_score += w_mmg - b_mmg
+    end_score += w_meg - b_meg
 
     phase := clamp(pos.phase, 0, MAX_PHASE)
 
