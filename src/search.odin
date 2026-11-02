@@ -30,6 +30,8 @@ SEE_MAX_DEPTH :: 8
 SEE_QUIET_MARGIN :: 20 // centipawns per ply of depth, squared
 SEE_CAPTURE_MARGIN :: 90 // centipawns per ply of depth
 
+PIECE_SQ_HISTORY :: [12][64]i16 // indexed by [piece][to] of the current move
+
 lmr_table: [64][64]int
 
 stop_flag : bool
@@ -47,8 +49,13 @@ SearchState :: struct {
 	history : History,
 	start: time.Tick,
 	limits: SearchLimits,
-	eval_stack: [MAX_PLY + 2]int
+	eval_stack: [MAX_PLY + 2]int,
+	cont_stack: [MAX_PLY + 2]^PIECE_SQ_HISTORY, // table for the move made at this ply
 }
+
+// [prev piece][prev to] -> table of [piece][to] scores
+cont_history: [12][64]PIECE_SQ_HISTORY
+cont_sentinel: PIECE_SQ_HISTORY // used after a nullmove; never updated
 
 killers: [MAX_PLY][2]Move
 quiet_history: [Color][64][64]int
@@ -94,6 +101,22 @@ time_limits :: proc(time_left_ms, inc_ms, movestogo: int) -> (soft, hard: time.D
 	soft = min(base, hard)
 
 	return max(soft, time.Millisecond), max(hard, time.Millisecond)
+}
+
+piece_index :: #force_inline proc(p: Piece) -> int {
+	return int(p.color) * 6 + int(p.piecetype) // same order as PIECE_CHARS
+}
+
+update_cont :: proc(s: ^SearchState, ply: int, move: Move, bonus: int) {
+	pi := piece_index(move.piece)
+	for back in 1..=2 {
+		if ply < back do break
+		table := s.cont_stack[ply - back]
+		if table == &cont_sentinel do continue // after a null move
+		h := &table[pi][move.pos_final]
+		v := int(h^)
+		h^ = i16(v + bonus - v * abs(bonus) / HISTORY_MAX)
+	}
 }
 
 should_stop :: #force_inline proc() -> bool {
@@ -173,7 +196,7 @@ see_threshold :: #force_inline proc(depth: int, quiet: bool) -> int {
 // Late move reduction, reduced less for moves with good history. Always
 // leaves at least one ply of depth
 lmr_reduction :: #force_inline proc(depth, move_num, order_score: int, improving: bool) -> int {
-	r := lmr_table[min(depth, 63)][min(move_num, 63)] - order_score / 8192
+	r := lmr_table[min(depth, 63)][min(move_num, 63)] - order_score / 24576
 	if !improving && r > 0 do r += 1
 	// if improving do r -= 1
 	return clamp(r, 0, depth - 2)
@@ -245,6 +268,7 @@ negamax :: proc(
 
 	if can_prune_node && allow_null && null_move_ok(pos, depth, static_eval, beta) {
 		R := 3 + depth / 6
+		s.cont_stack[ply] = &cont_sentinel
 		ni := apply_null_move(pos)
 		null_score := -negamax(s, pos, max(depth - 1 - R, 0), ply+1, -beta, -beta+1, false)
 		undo_null_move(ni, pos)
@@ -299,6 +323,7 @@ negamax :: proc(
 			continue
 		}
 
+		s.cont_stack[ply] = &cont_history[piece_index(move.piece)][move.pos_final]
 		if legal_moves == 1 {
 			// First move: full window
 			score = -negamax(s, pos, depth-1, ply+1, -beta, -alpha)
@@ -344,9 +369,13 @@ negamax :: proc(
 				bonus := min(depth * depth, HISTORY_MAX)
 				store_killer(ply, move)
 				update_history(move, bonus)
+				update_cont(s, ply, move, bonus)
 
 				// Penalize quiets tried before cutoff
-				for j in 0..<n_quiets-1 do update_history(quiets_tried[j], -bonus)
+				for j in 0..<n_quiets-1 {
+					update_history(quiets_tried[j], -bonus)
+					update_cont(s, ply, quiets_tried[j], -bonus)
+				}
 			}
 			break
 		}
@@ -495,6 +524,7 @@ search_root :: proc(
 		if !legal do continue
 		legal_moves += 1
 
+		s.cont_stack[0] = &cont_history[piece_index(move.piece)][move.pos_final]
 		score: int
 		if legal_moves == 1 {
 			score = -negamax(s, pos, depth-1, 1, -beta, -alpha)

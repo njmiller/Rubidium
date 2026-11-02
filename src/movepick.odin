@@ -47,7 +47,12 @@ score_moves :: proc(s: ^SearchState, ml: ^MoveList, pos: ^GamePosition, ply: int
 			if !see_ge(pos, m, 0) do ml.scores[i] += BAD_CAPTURE
 		case move_equal(m, killers[ply][0]):     ml.scores[i] = KILLER_1
 		case move_equal(m, killers[ply][1]):     ml.scores[i] = KILLER_2
-		case:                                    ml.scores[i] = quiet_history[m.piece.color][m.pos_init][m.pos_final]
+		case:
+			c1 := ply >= 1 ? s.cont_stack[ply - 1] : &cont_sentinel
+			c2 := ply >= 2 ? s.cont_stack[ply - 2] : &cont_sentinel
+			pi := piece_index(m.piece)                                    
+			ml.scores[i] = quiet_history[m.piece.color][m.pos_init][m.pos_final] +
+				int(c1[pi][m.pos_final]) + int(c2[pi][m.pos_final])
 		}
 	}
 }
