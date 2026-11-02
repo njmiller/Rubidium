@@ -76,6 +76,8 @@ KING_DANGER_MAX :: 500
 SHIELD_1_MG :: 12 // per pawn one rank in front
 SHIELD_2_MG :: 6 // per pawn two ranks in front
 
+KING_OPEN_FILE_MG :: 15 // per file next to the king with no friendly pawn
+
 GAME_PHASE :: enum u8 {
     Mid,
     End,
@@ -423,6 +425,23 @@ king_danger :: #force_inline proc(units: int, attackers: int) -> int {
     return min(units * units / KING_DANGER_DIV, KING_DANGER_MAX)
 }
 
+// Penalty for files at and next to the king that have no friendly pawn
+king_open_files :: proc(pos: ^GamePosition, color: Color) -> int {
+    kbb := pos.bb[color][.King]
+    if kbb == 0 do return 0
+
+    tmp := kbb
+    kfile := pop_first_bit(&tmp) % 8
+    pawns := pos.bb[color][.Pawn]
+
+    open := 0
+    for f in max(kfile - 1, 0) ..= min(kfile+1, 7) {
+        if FILE_MASKS[f] & pawns == 0 do open += 1
+    }
+
+    return KING_OPEN_FILE_MG * open
+}
+
 eval_position :: proc(pos: ^GamePosition) -> int {
     mid_score := pos.psqt_mid[.White] - pos.psqt_mid[.Black]
     end_score := pos.psqt_end[.White] - pos.psqt_end[.Black]
@@ -449,7 +468,9 @@ eval_position :: proc(pos: ^GamePosition) -> int {
     b_danger := king_danger(b_units, b_attackers)
     mid_score += w_danger - b_danger
 
-    // mid_score += pawn_shield(pos, .White) - pawn_shield(pos, .Black)
+    mid_score += pawn_shield(pos, .White) - pawn_shield(pos, .Black)
+
+    // mid_score -= king_open_files(pos, .White) - king_open_files(pos, .Black)
 
     phase := clamp(pos.phase, 0, MAX_PHASE)
 
