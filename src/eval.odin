@@ -24,6 +24,14 @@ ISOLATED_EG :: -15
 DOUBLED_MG :: -10
 DOUBLED_EG :: -20
 
+BISHOP_PAIR_MG :: 30
+BISHOP_PAIR_EG :: 50
+
+ROOK_OPEN_MG :: 25
+ROOK_OPEN_EG :: 10
+ROOK_SEMI_MG :: 12
+ROOK_SEMI_EG :: 6
+
 GAME_PHASE :: enum u8 {
     Mid,
     End,
@@ -277,6 +285,27 @@ eval_pawns :: proc(pos: ^GamePosition, color: Color) -> (mg: int, eg: int) {
     return
 }
 
+eval_rooks :: proc(pos: ^GamePosition, color: Color) -> (mg: int, eg: int) {
+    ours := pos.bb[color][.Pawn]
+    theirs := pos.bb[opp_color(color)][.Pawn]
+
+    bb := pos.bb[color][.Rook]
+    for bb != 0 {
+        file := pop_first_bit(&bb) % 8
+        if FILE_MASKS[file] & ours != 0 do continue // own pawn on the file
+
+        if FILE_MASKS[file] & theirs == 0 {
+            mg += ROOK_OPEN_MG
+            eg += ROOK_OPEN_EG
+        } else {
+            mg += ROOK_SEMI_MG
+            eg += ROOK_SEMI_EG
+        }
+    }
+
+    return
+}
+
 eval_position :: proc(pos: ^GamePosition) -> int {
     mid_score := pos.psqt_mid[.White] - pos.psqt_mid[.Black]
     end_score := pos.psqt_end[.White] - pos.psqt_end[.Black]
@@ -284,16 +313,31 @@ eval_position :: proc(pos: ^GamePosition) -> int {
     w_mg, w_eg := eval_pawns(pos, .White)
     b_mg, b_eg := eval_pawns(pos, .Black)
 
+    w_rmg, w_reg := eval_rooks(pos, .White)
+    b_rmg, b_reg := eval_rooks(pos, .Black)
+
     mid_score += w_mg - b_mg
     end_score += w_eg - b_eg
 
-	phase := clamp(pos.phase, 0, MAX_PHASE)
+    mid_score += w_rmg - b_rmg
+    end_score += w_reg - b_reg
 
-	// weighted average with full mid weight at MAX_PHASE and full end weight at phase=0
-	score := (mid_score * phase + end_score * (MAX_PHASE - phase)) / MAX_PHASE
+    phase := clamp(pos.phase, 0, MAX_PHASE)
 
-	// Should be a positive score if the side moving is ahead
-	return (pos.turn == .White ? score : -score) + TEMPO_BONUS
+    if count_ones_bb(pos.bb[.White][.Bishop]) >= 2 {
+        mid_score += BISHOP_PAIR_MG
+        end_score += BISHOP_PAIR_EG
+    }
+    if count_ones_bb(pos.bb[.Black][.Bishop]) >= 2 {
+        mid_score -= BISHOP_PAIR_MG
+        end_score -= BISHOP_PAIR_EG
+    }
+
+    // weighted average with full mid weight at MAX_PHASE and full end weight at phase=0
+    score := (mid_score * phase + end_score * (MAX_PHASE - phase)) / MAX_PHASE
+
+    // Should be a positive score if the side moving is ahead
+    return (pos.turn == .White ? score : -score) + TEMPO_BONUS
 }
 
 flip :: #force_inline proc "contextless" (sq: int) -> int {
@@ -301,7 +345,7 @@ flip :: #force_inline proc "contextless" (sq: int) -> int {
 }
 
 psqt_square :: #force_inline proc(square: int, color: Color) -> int {
-	return color == .White ? square : flip(square) // flip rank, keep file
+    return color == .White ? square : flip(square) // flip rank, keep file
 }
 
 psqt_value_mid :: #force_inline proc(piece: Piece, square: int) -> int {
