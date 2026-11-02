@@ -61,6 +61,21 @@ MOBILITY_EG := [PieceType]int{
     .King = 0,
 }
 
+KING_ATTACK_WEIGHT := [PieceType]int{
+    .Pawn = 0,
+    .Knight = 2,
+    .Bishop = 2,
+    .Rook = 3,
+    .Queen = 5,
+    .King = 0,
+}
+
+KING_DANGER_DIV :: 4
+KING_DANGER_MAX :: 500
+
+SHIELD_1_MG :: 12 // per pawn one rank in front
+SHIELD_2_MG :: 6 // per pawn two ranks in front
+
 GAME_PHASE :: enum u8 {
     Mid,
     End,
@@ -283,6 +298,22 @@ init_pawn_masks :: proc "contextless" () {
     }
 }
 
+// Bitboard plus its neighbors on the adjacent files
+spread_files :: #force_inline proc(b: BitBoard) -> BitBoard {
+    return b | ((b << 1) & ~FILE_A) | ((b >> 1) & ~FILE_H)
+}
+
+pawn_shield :: proc(pos: ^GamePosition, color: Color) -> int{
+    kbb := pos.bb[color][.King]
+    pawns := pos.bb[color][.Pawn]
+
+    front1 := spread_files(color == .White ? kbb << 8 : kbb >> 8)
+    front2 := color == .White ? front1 << 8 : front1 >> 8
+
+    return SHIELD_1_MG * count_ones_bb(front1 & pawns) +
+        SHIELD_2_MG * count_ones_bb(front2 & pawns)
+}
+
 // Squares attacked by parns of the given color
 pawn_attacks_bb :: #force_inline proc(pawns: BitBoard, color: Color) -> BitBoard {
     if color == .White {
@@ -343,13 +374,19 @@ eval_rooks :: proc(pos: ^GamePosition, color: Color) -> (mg: int, eg: int) {
     return
 }
 
-eval_mobility :: proc(pos: ^GamePosition, color: Color) -> (mg: int, eg: int) {
+eval_mobility :: proc(pos: ^GamePosition, color: Color) -> (mg, eg, attack_units, attackers: int) {
     them := opp_color(color)
     occ := all_occupied(pos)
 
     // Squares a piece can usefully reach: notout own pieces, not covered by enemy pawns
     area := ~pos.occupied[color] & ~pawn_attacks_bb(pos.bb[them][.Pawn], them)
 
+    // Squares around the enemy king. Empty when there's no king (test setups)
+    zone : BitBoard
+    if kbb := pos.bb[them][.King]; kbb != 0 {
+        tmp := kbb
+        zone = king_moves[pop_first_bit(&tmp)] | kbb
+    }
     for pt in PieceType {
         if pt == .Pawn || pt == .King do continue
 
@@ -369,10 +406,21 @@ eval_mobility :: proc(pos: ^GamePosition, color: Color) -> (mg: int, eg: int) {
             n := count_ones_bb(attacks & area) - MOBILITY_BASE[pt]
             mg += MOBILITY_MG[pt] * n
             eg += MOBILITY_EG[pt] * n
+
+            if hits := count_ones_bb(attacks & zone); hits > 0 {
+                attackers += 1
+                attack_units += KING_ATTACK_WEIGHT[pt] * hits
+            }
         }
     }
 
     return
+}
+
+// Penalty for the side whose king is attacked. A long attacker isn't a threat
+king_danger :: #force_inline proc(units: int, attackers: int) -> int {
+    if attackers < 2 do return 0
+    return min(units * units / KING_DANGER_DIV, KING_DANGER_MAX)
 }
 
 eval_position :: proc(pos: ^GamePosition) -> int {
@@ -385,8 +433,8 @@ eval_position :: proc(pos: ^GamePosition) -> int {
     w_rmg, w_reg := eval_rooks(pos, .White)
     b_rmg, b_reg := eval_rooks(pos, .Black)
 
-    w_mmg, w_meg := eval_mobility(pos, .White)
-    b_mmg, b_meg := eval_mobility(pos, .Black)
+    w_mmg, w_meg, w_units, w_attackers := eval_mobility(pos, .White)
+    b_mmg, b_meg, b_units, b_attackers := eval_mobility(pos, .Black)
 
     mid_score += w_mg - b_mg
     end_score += w_eg - b_eg
@@ -396,6 +444,12 @@ eval_position :: proc(pos: ^GamePosition) -> int {
 
     mid_score += w_mmg - b_mmg
     end_score += w_meg - b_meg
+
+    w_danger := king_danger(w_units, w_attackers)
+    b_danger := king_danger(b_units, b_attackers)
+    mid_score += w_danger - b_danger
+
+    // mid_score += pawn_shield(pos, .White) - pawn_shield(pos, .Black)
 
     phase := clamp(pos.phase, 0, MAX_PHASE)
 
