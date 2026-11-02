@@ -196,7 +196,7 @@ see_threshold :: #force_inline proc(depth: int, quiet: bool) -> int {
 // Late move reduction, reduced less for moves with good history. Always
 // leaves at least one ply of depth
 lmr_reduction :: #force_inline proc(depth, move_num, order_score: int, improving: bool) -> int {
-	r := lmr_table[min(depth, 63)][min(move_num, 63)] - order_score / 24576
+	r := lmr_table[min(depth, 63)][min(move_num, 63)] - order_score / 8192
 	if !improving && r > 0 do r += 1
 	// if improving do r -= 1
 	return clamp(r, 0, depth - 2)
@@ -333,7 +333,9 @@ negamax :: proc(
 			is_killer := all_moves.scores[i] >= KILLER_2 && all_moves.scores[i] < CAPTURE_BASE
 
 			if depth >= 3 && legal_moves >= 4 && quiet && !is_killer && !in_check && !gives_check {
-				r = lmr_reduction(depth, legal_moves, all_moves.scores[i], improving)
+				// r = lmr_reduction(depth, legal_moves, all_moves.scores[i], improving)
+				r = lmr_reduction(depth, legal_moves,
+					quiet_history[move.piece.color][move.pos_init][move.pos_final], improving)
 			}
 
 			// Reduced depth, null window
