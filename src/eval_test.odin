@@ -365,11 +365,12 @@ test_eval_random_walk_consistency :: proc(t: ^testing.T) {
 
 @(test)
 test_pesto_orientation :: proc(t: ^testing.T) {
-	// e7 = 52, e2 = 12. PeSTO eg pawn on e7 (white's view) = 94 + 147
+	// e7 = 52, e2 = 12. The tables are listed a8 first, so e7 is entry 12
 	wp := Piece{.Pawn, .White}
 	bp := Piece{.Pawn, .Black}
-	testing.expect_value(t, psqt_value_end(wp, 52), 94 + 147)
-	testing.expect_value(t, psqt_value_end(bp, 12), 94 + 147) // black on e2 mirrors white on e7
+	e7 := EG_PIECE_VALUE[.Pawn] + eg_pawn_table[12]
+	testing.expect_value(t, psqt_value_end(wp, 52), e7)
+	testing.expect_value(t, psqt_value_end(bp, 12), e7) // black on e2 mirrors white on e7
 }
 
 @(test)
