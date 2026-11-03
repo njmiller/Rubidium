@@ -19,6 +19,11 @@ PASSED_PAWN_MASKS: [Color][64]BitBoard
 PASSED_MG := [8]int{0, 5, 5, 10, 20, 35, 60, 0}
 PASSED_EG := [8]int{0, 10, 15, 25, 40, 70, 110, 0}
 
+PASSER_ENEMY_KING_EG :: 5 // per square the enemy king is from the stop square, times rank weight
+PASSER_OWN_KING_EG :: 2 //per square our king is from the stop square, times rank weight
+PASSER_BLOCKED_MG :: 4 // per rank weight when the stop square is occupied
+PASSER_BLOCKED_EG :: 8
+
 ISOLATED_MG :: -10
 ISOLATED_EG :: -15
 DOUBLED_MG :: -10
@@ -395,6 +400,50 @@ eval_pawns :: proc(pos: ^GamePosition, color: Color) -> (mg: int, eg: int) {
     return
 }
 
+// Number of king moves between two squares
+square_distance :: #force_inline proc(a, b: int) -> int {
+    return max(abs(a% 8 - b % 8), abs(a / 8 - b / 8))
+}
+
+// King proximity and blockers for passed pawns. Kept out of eval_pawns because
+// it depends on more than the pawns
+eval_passers :: proc(pos: ^GamePosition, color: Color) -> (mg, eg: int) {
+    them := opp_color(color)
+    ours := pos.bb[color][.Pawn]
+    theirs := pos.bb[them][.Pawn]
+    occ := all_occupied(pos)
+
+    // Test setups can lack a king. Skip the distance tersm then
+    our_kbb, their_kbb := pos.bb[color][.King], pos.bb[them][.King]
+    have_kings := our_kbb != 0 && their_kbb != 0
+    our_king := have_kings ? pop_first_bit(&our_kbb) : 0
+    their_king := have_kings ? pop_first_bit(&their_kbb) : 0
+
+    bb := ours
+    for bb != 0 {
+        sq := pop_first_bit(&bb)
+        if PASSED_PAWN_MASKS[color][sq] & theirs != 0 do continue
+
+        rel_rank := color == .White ? sq / 8 : 7 - (sq / 8)
+        weight := rel_rank - 2 // 0 on ranks 2-3, up to 4 on the 7th
+        if weight <= 0 do continue
+
+        stop := color == .White ? sq + 8 : sq - 8
+
+        if have_kings {
+            eg += weight * (PASSER_ENEMY_KING_EG * square_distance(their_king, stop) -
+                PASSER_OWN_KING_EG * square_distance(our_king, stop))
+        }
+
+        if occ & (BitBoard(1) << uint(stop)) != 0 {
+            mg -= PASSER_BLOCKED_MG * weight
+            eg -= PASSER_BLOCKED_EG * weight
+        }
+    }
+
+    return
+}
+
 eval_rooks :: proc(pos: ^GamePosition, color: Color) -> (mg: int, eg: int) {
     ours := pos.bb[color][.Pawn]
     theirs := pos.bb[opp_color(color)][.Pawn]
@@ -526,6 +575,12 @@ eval_position :: proc(pos: ^GamePosition) -> int {
 
     mid_score += w_mg - b_mg
     end_score += w_eg - b_eg
+
+    w_pmg, w_peg := eval_passers(pos, .White)
+    b_pmg, b_peg := eval_passers(pos, .Black)
+
+    mid_score += w_pmg - b_pmg
+    end_score += w_peg - b_peg
 
     w_rmg, w_reg := eval_rooks(pos, .White)
     b_rmg, b_reg := eval_rooks(pos, .Black)
