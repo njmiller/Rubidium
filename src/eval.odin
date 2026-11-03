@@ -357,8 +357,12 @@ pawn_shield :: proc(pos: ^GamePosition, color: Color) -> int{
     front1 := spread_files(color == .White ? kbb << 8 : kbb >> 8)
     front2 := color == .White ? front1 << 8 : front1 >> 8
 
-    return SHIELD_1_MG * count_ones_bb(front1 & pawns) +
-        SHIELD_2_MG * count_ones_bb(front2 & pawns)
+    n1 := count_ones_bb(front1 & pawns)
+    n2 := count_ones_bb(front2 & pawns)
+    trace_add(F_SHIELD_1, color, n1)
+    trace_add(F_SHIELD_2, color, n2)
+
+    return SHIELD_1_MG * n1 + SHIELD_2_MG * n2
 }
 
 // Squares attacked by parns of the given color
@@ -382,10 +386,12 @@ eval_pawns :: proc(pos: ^GamePosition, color: Color) -> (mg: int, eg: int) {
         if PASSED_PAWN_MASKS[color][sq] & theirs == 0 {
             mg += PASSED_MG[rel_rank]
             eg += PASSED_EG[rel_rank]
+            trace_add(F_PASSED + rel_rank, color)
         }
         if ADJACENT_FILE_MASKS[file] & ours == 0 {
             mg += ISOLATED_MG
             eg += ISOLATED_EG
+            trace_add(F_ISOLATED, color)
         }
     }
 
@@ -394,6 +400,7 @@ eval_pawns :: proc(pos: ^GamePosition, color: Color) -> (mg: int, eg: int) {
         if n > 1 {
             mg += DOUBLED_MG * (n-1)
             eg += DOUBLED_EG * (n-1)
+            trace_add(F_DOUBLED, color, n - 1)
         }
     }
 
@@ -431,13 +438,17 @@ eval_passers :: proc(pos: ^GamePosition, color: Color) -> (mg, eg: int) {
         stop := color == .White ? sq + 8 : sq - 8
 
         if have_kings {
-            eg += weight * (PASSER_ENEMY_KING_EG * square_distance(their_king, stop) -
-                PASSER_OWN_KING_EG * square_distance(our_king, stop))
+            their_dist := square_distance(their_king, stop)
+            our_dist := square_distance(our_king, stop)
+            eg += weight * (PASSER_ENEMY_KING_EG * their_dist - PASSER_OWN_KING_EG * our_dist)
+            trace_add(F_PASSER_ENEMY_KING, color, weight * their_dist)
+            trace_add(F_PASSER_OWN_KING, color, -weight * our_dist)
         }
 
         if occ & (BitBoard(1) << uint(stop)) != 0 {
             mg -= PASSER_BLOCKED_MG * weight
             eg -= PASSER_BLOCKED_EG * weight
+            trace_add(F_PASSER_BLOCKED, color, -weight)
         }
     }
 
@@ -456,9 +467,11 @@ eval_rooks :: proc(pos: ^GamePosition, color: Color) -> (mg: int, eg: int) {
         if FILE_MASKS[file] & theirs == 0 {
             mg += ROOK_OPEN_MG
             eg += ROOK_OPEN_EG
+            trace_add(F_ROOK_OPEN, color)
         } else {
             mg += ROOK_SEMI_MG
             eg += ROOK_SEMI_EG
+            trace_add(F_ROOK_SEMI, color)
         }
     }
 
@@ -502,6 +515,7 @@ eval_mobility :: proc(pos: ^GamePosition, color: Color) -> (mg, eg, attack_units
             n := count_ones_bb(attacks & area) - MOBILITY_BASE[pt]
             mg += MOBILITY_MG[pt] * n
             eg += MOBILITY_EG[pt] * n
+            trace_add(F_MOBILITY + int(pt), color, n)
 
             if hits := count_ones_bb(attacks & zone); hits > 0 {
                 attackers += 1
@@ -529,15 +543,18 @@ eval_threats :: proc(pos: ^GamePosition, color: Color, minor_attacks, rook_attac
         n := count_ones_bb(targets & pawn_attacks)
         mg += THREAT_BY_PAWN_MG[pt] * n
         eg += THREAT_BY_PAWN_EG[pt] * n
+        trace_add(F_THREAT_BY_PAWN + int(pt), color, n)
 
         n = count_ones_bb(targets & minor_attacks)
         mg += THREAT_BY_MINOR_MG[pt] * n
         eg += THREAT_BY_MINOR_EG[pt] * n
+        trace_add(F_THREAT_BY_MINOR + int(pt), color, n)
     }
 
     n := count_ones_bb(pos.bb[them][.Queen] & rook_attacks)
     mg += THREAT_ROOK_ON_QUEEN_MG * n
     eg += THREAT_ROOK_ON_QUEEN_EG * n
+    trace_add(F_THREAT_ROOK_ON_QUEEN, color, n)
 
     return
 }
@@ -562,8 +579,8 @@ king_open_files :: proc(pos: ^GamePosition, color: Color) -> int {
         if FILE_MASKS[f] & pawns == 0 do open += 1
     }
 
-    // return KING_OPEN_FILE_MG * open
-    return open
+    trace_add(F_KING_OPEN_FILE, color, -open) // subtracted in eval_position
+    return KING_OPEN_FILE_MG * open
 }
 
 eval_position :: proc(pos: ^GamePosition) -> int {
@@ -594,26 +611,28 @@ eval_position :: proc(pos: ^GamePosition) -> int {
     mid_score += w_mmg - b_mmg
     end_score += w_meg - b_meg
 
-    // w_units += KING_OPEN_FILE_UNITS * king_open_files(pos, .Black)
-    // b_units += KING_OPEN_FILE_UNITS * king_open_files(pos, .White)
-
     w_danger := king_danger(w_units, w_attackers)
     b_danger := king_danger(b_units, b_attackers)
     mid_score += w_danger - b_danger
+    when TUNE {
+        trace_danger = w_danger - b_danger
+    }
 
     mid_score += pawn_shield(pos, .White) - pawn_shield(pos, .Black)
 
-    // mid_score -= king_open_files(pos, .White) - king_open_files(pos, .Black)
+    mid_score -= king_open_files(pos, .White) - king_open_files(pos, .Black)
 
     phase := clamp(pos.phase, 0, MAX_PHASE)
 
     if count_ones_bb(pos.bb[.White][.Bishop]) >= 2 {
         mid_score += BISHOP_PAIR_MG
         end_score += BISHOP_PAIR_EG
+        trace_add(F_BISHOP_PAIR, .White)
     }
     if count_ones_bb(pos.bb[.Black][.Bishop]) >= 2 {
         mid_score -= BISHOP_PAIR_MG
         end_score -= BISHOP_PAIR_EG
+        trace_add(F_BISHOP_PAIR, .Black)
     }
 
     // weighted average with full mid weight at MAX_PHASE and full end weight at phase=0
