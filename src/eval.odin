@@ -79,6 +79,45 @@ SHIELD_2_MG :: 6 // per pawn two ranks in front
 KING_OPEN_FILE_MG :: 15 // per file next to the king with no friendly pawn
 KING_OPEN_FILE_UNITS :: 2 // attacks units per open file next to the king
 
+THREAT_BY_PAWN_MG := [PieceType]int{
+    .Pawn = 0,
+    .Knight = 40,
+    .Bishop = 40,
+    .Rook = 45,
+    .Queen = 45,
+    .King = 0,
+}
+
+THREAT_BY_PAWN_EG := [PieceType]int{
+    .Pawn = 0,
+    .Knight = 25,
+    .Bishop = 25,
+    .Rook = 30,
+    .Queen = 30,
+    .King = 0,
+}
+
+THREAT_BY_MINOR_MG := [PieceType]int{
+    .Pawn = 0,
+    .Knight = 0,
+    .Bishop = 0,
+    .Rook = 30,
+    .Queen = 30,
+    .King = 0,
+}
+
+THREAT_BY_MINOR_EG := [PieceType]int{
+    .Pawn = 0,
+    .Knight = 0,
+    .Bishop = 0,
+    .Rook = 20,
+    .Queen = 30,
+    .King = 0,
+}
+
+THREAT_ROOK_ON_QUEEN_MG :: 25
+THREAT_ROOK_ON_QUEEN_EG :: 25
+
 GAME_PHASE :: enum u8 {
     Mid,
     End,
@@ -390,6 +429,8 @@ eval_mobility :: proc(pos: ^GamePosition, color: Color) -> (mg, eg, attack_units
         tmp := kbb
         zone = king_moves[pop_first_bit(&tmp)] | kbb
     }
+
+    minor_attacks, rook_attacks : BitBoard
     for pt in PieceType {
         if pt == .Pawn || pt == .King do continue
 
@@ -406,6 +447,9 @@ eval_mobility :: proc(pos: ^GamePosition, color: Color) -> (mg, eg, attack_units
                 case .Pawn, .King:
             }
 
+            if pt == .Knight || pt == .Bishop do minor_attacks |= attacks
+            else if pt == .Rook do rook_attacks |= attacks
+
             n := count_ones_bb(attacks & area) - MOBILITY_BASE[pt]
             mg += MOBILITY_MG[pt] * n
             eg += MOBILITY_EG[pt] * n
@@ -416,6 +460,35 @@ eval_mobility :: proc(pos: ^GamePosition, color: Color) -> (mg, eg, attack_units
             }
         }
     }
+
+    tmg, teg := eval_threats(pos, color, minor_attacks, rook_attacks)
+    mg += tmg
+    eg += teg
+
+    return
+}
+
+// Bonus for enemy pieces attacked by our cheaper pieces
+eval_threats :: proc(pos: ^GamePosition, color: Color, minor_attacks, rook_attacks: BitBoard) -> (mg, eg: int) {
+    them := opp_color(color)
+    pawn_attacks := pawn_attacks_bb(pos.bb[color][.Pawn], color)
+
+    for pt in PieceType {
+        if pt == .Pawn || pt == .King do continue
+        targets := pos.bb[them][pt]
+
+        n := count_ones_bb(targets & pawn_attacks)
+        mg += THREAT_BY_PAWN_MG[pt] * n
+        eg += THREAT_BY_PAWN_EG[pt] * n
+
+        n = count_ones_bb(targets & minor_attacks)
+        mg += THREAT_BY_MINOR_MG[pt] * n
+        eg += THREAT_BY_MINOR_EG[pt] * n
+    }
+
+    n := count_ones_bb(pos.bb[them][.Queen] & rook_attacks)
+    mg += THREAT_ROOK_ON_QUEEN_MG * n
+    eg += THREAT_ROOK_ON_QUEEN_EG * n
 
     return
 }
@@ -451,17 +524,17 @@ eval_position :: proc(pos: ^GamePosition) -> int {
     w_mg, w_eg := eval_pawns(pos, .White)
     b_mg, b_eg := eval_pawns(pos, .Black)
 
-    w_rmg, w_reg := eval_rooks(pos, .White)
-    b_rmg, b_reg := eval_rooks(pos, .Black)
-
-    w_mmg, w_meg, w_units, w_attackers := eval_mobility(pos, .White)
-    b_mmg, b_meg, b_units, b_attackers := eval_mobility(pos, .Black)
-
     mid_score += w_mg - b_mg
     end_score += w_eg - b_eg
 
+    w_rmg, w_reg := eval_rooks(pos, .White)
+    b_rmg, b_reg := eval_rooks(pos, .Black)
+
     mid_score += w_rmg - b_rmg
     end_score += w_reg - b_reg
+
+    w_mmg, w_meg, w_units, w_attackers := eval_mobility(pos, .White)
+    b_mmg, b_meg, b_units, b_attackers := eval_mobility(pos, .Black)
 
     mid_score += w_mmg - b_mmg
     end_score += w_meg - b_meg
