@@ -77,6 +77,7 @@ SHIELD_1_MG :: 12 // per pawn one rank in front
 SHIELD_2_MG :: 6 // per pawn two ranks in front
 
 KING_OPEN_FILE_MG :: 15 // per file next to the king with no friendly pawn
+KING_OPEN_FILE_UNITS :: 2 // attacks units per open file next to the king
 
 GAME_PHASE :: enum u8 {
     Mid,
@@ -439,7 +440,8 @@ king_open_files :: proc(pos: ^GamePosition, color: Color) -> int {
         if FILE_MASKS[f] & pawns == 0 do open += 1
     }
 
-    return KING_OPEN_FILE_MG * open
+    // return KING_OPEN_FILE_MG * open
+    return open
 }
 
 eval_position :: proc(pos: ^GamePosition) -> int {
@@ -463,6 +465,9 @@ eval_position :: proc(pos: ^GamePosition) -> int {
 
     mid_score += w_mmg - b_mmg
     end_score += w_meg - b_meg
+
+    // w_units += KING_OPEN_FILE_UNITS * king_open_files(pos, .Black)
+    // b_units += KING_OPEN_FILE_UNITS * king_open_files(pos, .White)
 
     w_danger := king_danger(w_units, w_attackers)
     b_danger := king_danger(b_units, b_attackers)
